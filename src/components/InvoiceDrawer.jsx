@@ -14,10 +14,16 @@ function fmt(n) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 }
 function fmtDate(d) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  // Parse the date string as local date to avoid timezone issues
+  const [year, month, day] = d.split('-');
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 function fmtShort(d) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // Parse the date string as local date to avoid timezone issues
+  const [year, month, day] = d.split('-');
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 function initials(name) {
   return name.split(' ').map(w => w[0]).join('').toUpperCase();
@@ -70,9 +76,239 @@ function Divider() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   Request Changes Modal — for adding commentary when requesting changes
+   ═══════════════════════════════════════════════════════════════ */
+function RequestChangesModal({ open, onClose, onSubmit, billVendor }) {
+  const [comments, setComments] = useState('');
+
+  if (!open) return null;
+
+  function handleSubmit() {
+    if (comments.trim()) {
+      onSubmit(comments);
+      setComments('');
+      onClose();
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-[480px] max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+        style={{ animation: 'modalSlideUp 0.2s ease-out' }}
+      >
+        {/* Header */}
+        <div className="px-6 pt-5 pb-3 border-b border-stone-200 flex items-center justify-between shrink-0">
+          <h3 className="text-lg font-semibold text-stone-900">Request Changes</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 flex-1 overflow-y-auto">
+          <p className="text-sm text-stone-600 mb-4">
+            Add comments explaining what changes are needed for this invoice from {billVendor}.
+          </p>
+          <textarea
+            value={comments}
+            onChange={e => setComments(e.target.value)}
+            placeholder="E.g., incorrect amount, missing line items, needs updated cost code..."
+            rows={6}
+            autoFocus
+            className="w-full bg-stone-50 border border-stone-200 rounded-lg px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none"
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-stone-200 flex items-center justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!comments.trim()}
+            className={`text-sm rounded-lg px-4 py-2 font-medium flex items-center gap-1.5 ${
+              comments.trim()
+                ? 'bg-orange-600 text-white hover:bg-orange-700'
+                : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+            }`}
+          >
+            <MessageSquare size={14} /> Request Changes
+          </button>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes modalSlideUp {
+          from { opacity: 0; transform: translateY(12px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Lien Waiver Warning Modal — warns when approving without waiver
+   ═══════════════════════════════════════════════════════════════ */
+function LienWaiverWarningModal({ open, onClose, onProceed, billVendor }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-[480px] max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+        style={{ animation: 'modalSlideUp 0.2s ease-out' }}
+      >
+        {/* Header */}
+        <div className="px-6 pt-5 pb-3 border-b border-stone-200 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={20} className="text-orange-600" />
+            <h3 className="text-lg font-semibold text-stone-900">Missing Lien Waiver</h3>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 flex-1 overflow-y-auto">
+          <p className="text-sm text-stone-800 mb-4">
+            This invoice from <span className="font-semibold">{billVendor}</span> requires a lien waiver, but none has been attached yet.
+          </p>
+
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+            <div className="text-sm font-semibold text-orange-900 mb-2">⚠️ Implications of approving without lien waiver:</div>
+            <ul className="text-sm text-orange-800 space-y-1.5 ml-4 list-disc">
+              <li>Your company may face legal liability for unpaid subcontractor claims</li>
+              <li>The property could have liens placed against it by unpaid parties</li>
+              <li>You may be required to pay twice if the vendor doesn't pay their subs</li>
+              <li>This violates standard construction payment best practices</li>
+            </ul>
+          </div>
+
+          <p className="text-sm text-stone-600">
+            <span className="font-semibold">Recommended action:</span> Request the lien waiver from the vendor before approving this invoice for payment.
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-stone-200 flex items-center justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={onProceed}
+            className="text-sm bg-orange-600 text-white rounded-lg px-4 py-2 hover:bg-orange-700 font-medium flex items-center gap-1.5"
+          >
+            <Check size={14} /> Approve anyway
+          </button>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes modalSlideUp {
+          from { opacity: 0; transform: translateY(12px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Schedule Payment Modal — for selecting payment date
+   ═══════════════════════════════════════════════════════════════ */
+function SchedulePaymentModal({ open, onClose, onSubmit, billVendor }) {
+  const [paymentDate, setPaymentDate] = useState('');
+
+  // Set default to 7 days from now when modal opens
+  useEffect(() => {
+    if (open) {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 7);
+      setPaymentDate(futureDate.toISOString().split('T')[0]);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  function handleSubmit() {
+    if (paymentDate) {
+      onSubmit(paymentDate);
+      onClose();
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-[480px] max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+        style={{ animation: 'modalSlideUp 0.2s ease-out' }}
+      >
+        {/* Header */}
+        <div className="px-6 pt-5 pb-3 border-b border-stone-200 flex items-center justify-between shrink-0">
+          <h3 className="text-lg font-semibold text-stone-900">Schedule Payment</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 flex-1 overflow-y-auto">
+          <p className="text-sm text-stone-600 mb-4">
+            Select the date you'd like to schedule payment for <span className="font-semibold">{billVendor}</span>.
+          </p>
+          <div className="bg-stone-50 rounded-lg px-4 py-3 border border-stone-200">
+            <label className="text-xs text-stone-500 mb-2 block">Payment Date</label>
+            <input
+              type="date"
+              value={paymentDate}
+              onChange={e => setPaymentDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              autoFocus
+              className="w-full bg-white border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-300"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-stone-200 flex items-center justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!paymentDate}
+            className={`text-sm rounded-lg px-4 py-2 font-medium flex items-center gap-1.5 ${
+              paymentDate
+                ? 'bg-stone-900 text-white hover:bg-stone-800'
+                : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+            }`}
+          >
+            <Calendar size={14} /> Schedule Payment
+          </button>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes modalSlideUp {
+          from { opacity: 0; transform: translateY(12px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
    Upload Modal — used for receipts, lien waivers, attachments
    ═══════════════════════════════════════════════════════════════ */
-function UploadModal({ open, onClose, title, onSubmit }) {
+function UploadModal({ open, onClose, title, onSubmit, uploadType }) {
   const [files, setFiles] = useState([]);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
@@ -93,7 +329,7 @@ function UploadModal({ open, onClose, title, onSubmit }) {
   }
 
   function handleSubmit() {
-    onSubmit(files);
+    onSubmit(files, uploadType);
     setFiles([]);
     onClose();
   }
@@ -199,6 +435,21 @@ function OverviewTab({ bill, onOpenUpload, edits, onEdit, onAction }) {
   return (
     <div>
       {/* Warning banners */}
+      {bill.status === 'Changes Requested' && (
+        <>
+          <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border border-orange-200 bg-orange-50 text-xs text-orange-800 mb-2">
+            <MessageSquare size={14} className="shrink-0 mt-0.5" /> Changes requested — please review comments and make necessary updates
+          </div>
+          {bill.changeRequestComments && (
+            <div className="bg-white border border-orange-200 rounded-lg p-4 mb-4">
+              <div className="text-xs font-semibold text-stone-700 mb-2 flex items-center gap-1.5">
+                <MessageSquare size={12} className="text-orange-600" /> Requested Changes
+              </div>
+              <div className="text-sm text-stone-800 whitespace-pre-wrap">{bill.changeRequestComments}</div>
+            </div>
+          )}
+        </>
+      )}
       {isOverdue && (
         <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 mb-4">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" /> This invoice is overdue — payment was due {fmtShort(bill.dueDate)}
@@ -224,9 +475,28 @@ function OverviewTab({ bill, onOpenUpload, edits, onEdit, onAction }) {
       {/* Invoice details */}
       <SectionTitle>Invoice Details</SectionTitle>
       <FieldCard label="Invoice Number" value={bill.invoiceNumber} icon={FileText} verified />
-      <FieldCard label="Invoice Date" value={fmtDate(bill.invoiceDate)} icon={Calendar} />
-      <FieldCard label="Due Date" value={fmtDate(bill.dueDate)} icon={Calendar} verified={!isOverdue} />
-      <FieldCard label="Amount" value={fmt(bill.amount)} icon={DollarSign} verified />
+      <EditableFieldCard
+        label="Invoice Date"
+        value={edits.invoiceDate}
+        onChange={v => onEdit('invoiceDate', v)}
+        icon={Calendar}
+        type="date"
+      />
+      <EditableFieldCard
+        label="Due Date"
+        value={edits.dueDate}
+        onChange={v => onEdit('dueDate', v)}
+        icon={Calendar}
+        type="date"
+      />
+      <EditableFieldCard
+        label="Amount"
+        value={edits.amount}
+        onChange={v => onEdit('amount', v)}
+        icon={DollarSign}
+        type="number"
+        suffix="USD"
+      />
       <EditableFieldCard
         label="Payment Method"
         value={edits.paymentMethod}
@@ -238,8 +508,8 @@ function OverviewTab({ bill, onOpenUpload, edits, onEdit, onAction }) {
 
       {/* Project assignment */}
       <SectionTitle>Project Assignment</SectionTitle>
-      <FieldCard label="Project" value={bill.project} verified sub={proj?.code} />
-      <FieldCard label="Cost Code" value={`${bill.costCode} · ${costCode?.name || 'Unknown'}`} verified />
+      <EditableFieldCard label="Project" value={edits.project} onChange={v => onEdit('project', v)} />
+      <EditableFieldCard label="Cost Code" value={edits.costCode} onChange={v => onEdit('costCode', v)} />
       <EditableFieldCard label="Owner" value={edits.owner} onChange={v => onEdit('owner', v)} />
 
       {/* Budget progress */}
@@ -393,28 +663,45 @@ function ComplianceTab({ bill, onOpenUpload, edits, onEdit, onAction }) {
       {/* Lien waiver status */}
       <SectionTitle>Lien Waiver</SectionTitle>
       {bill.lienWaiverRequired ? (
-        <div className={`flex items-center justify-between px-4 py-3 rounded-lg border mb-3 ${
-          bill.lienWaiverAttached ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'
-        }`}>
-          <div className="flex items-center gap-2.5">
-            {bill.lienWaiverAttached ? (
-              <CheckCircle2 size={16} className="text-emerald-600" />
-            ) : (
-              <FileWarning size={16} className="text-orange-600" />
-            )}
-            <div>
-              <div className="text-sm font-medium text-stone-800">
-                {bill.lienWaiverAttached ? 'Lien waiver received' : 'Lien waiver missing'}
-              </div>
-              <div className="text-xs text-stone-500">
-                {bill.lienWaiverAttached
-                  ? 'Waiver on file — payment can proceed'
-                  : 'Required before payment can be released'}
+        <>
+          <div className={`flex items-center justify-between px-4 py-3 rounded-lg border mb-3 ${
+            bill.lienWaiverAttached ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              {bill.lienWaiverAttached ? (
+                <CheckCircle2 size={16} className="text-emerald-600" />
+              ) : (
+                <FileWarning size={16} className="text-orange-600" />
+              )}
+              <div>
+                <div className="text-sm font-medium text-stone-800">
+                  {bill.lienWaiverAttached ? 'Lien waiver received' : 'Lien waiver missing'}
+                </div>
+                <div className="text-xs text-stone-500">
+                  {bill.lienWaiverAttached
+                    ? 'Waiver on file — payment can proceed'
+                    : 'Required before payment can be released'}
+                </div>
               </div>
             </div>
+            <StatusBadge status={bill.lienWaiverAttached ? 'Received' : 'Missing'} />
           </div>
-          <StatusBadge status={bill.lienWaiverAttached ? 'Received' : 'Missing'} />
-        </div>
+
+          {/* Show attached waiver file if present */}
+          {bill.lienWaiverAttached && (
+            <div className="bg-stone-50 border border-stone-200 rounded-lg p-4 flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+                <FileText size={16} className="text-emerald-600" />
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-medium text-stone-800">Lien-Waiver-{bill.invoiceNumber}.pdf</div>
+                <div className="text-xs text-stone-500">Uploaded lien waiver</div>
+              </div>
+              <button className="text-xs text-stone-600 underline hover:text-stone-900">View</button>
+              <button className="text-xs text-emerald-600 underline hover:text-emerald-700">Download</button>
+            </div>
+          )}
+        </>
       ) : (
         <div className="flex items-center gap-2.5 px-4 py-3 rounded-lg border border-stone-200 bg-stone-50 mb-3">
           <Shield size={16} className="text-stone-400" />
@@ -429,7 +716,7 @@ function ComplianceTab({ bill, onOpenUpload, edits, onEdit, onAction }) {
       {bill.lienWaiverRequired && !bill.lienWaiverAttached && (
         <div className="space-y-2 mb-4">
           <button
-            onClick={() => onOpenUpload('Upload Lien Waiver')}
+            onClick={() => onOpenUpload('Upload Lien Waiver', 'lien-waiver')}
             className="w-full border-2 border-dashed border-orange-300 rounded-lg p-5 text-center cursor-pointer hover:border-orange-400 transition-colors bg-orange-50/30"
           >
             <div className="flex items-center justify-center gap-2 text-sm text-stone-600">
@@ -440,7 +727,7 @@ function ComplianceTab({ bill, onOpenUpload, edits, onEdit, onAction }) {
           </button>
           <div className="flex gap-2">
             <button
-              onClick={() => onAction('approve', `Lien waiver requested from ${bill.vendor}`)}
+              onClick={() => onAction('lien-waiver-requested', `Lien waiver requested from ${bill.vendor}`)}
               className="flex-1 flex items-center justify-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-3 py-2 hover:bg-stone-800 font-medium"
             >
               <Send size={13} /> Request waiver
@@ -533,13 +820,13 @@ function ApprovalsTab({ bill, edits, onEdit, onAction }) {
     {
       id: 'ap1', step: 1, name: bill.owner,
       role: bill.ownerRole === 'PM' ? 'Project Manager' : 'AP Manager',
-      status: bill.status === 'Paid' || bill.status === 'Scheduled' ? 'Approved' : 'Pending',
-      timestamp: bill.status === 'Paid' || bill.status === 'Scheduled' ? 'Jun 12, 2024 · 10:30 AM' : null,
+      status: bill.status === 'Paid' ? 'Approved' : 'Pending',
+      timestamp: bill.status === 'Paid' ? 'Jun 12, 2024 · 10:30 AM' : null,
     },
     {
       id: 'ap2', step: 2, name: 'Jan Levinson', role: 'Controller',
-      status: bill.status === 'Paid' || bill.status === 'Scheduled' ? 'Approved' : 'Waiting',
-      timestamp: bill.status === 'Paid' || bill.status === 'Scheduled' ? 'Jun 13, 2024 · 2:15 PM' : null,
+      status: bill.status === 'Paid' ? 'Approved' : 'Waiting',
+      timestamp: bill.status === 'Paid' ? 'Jun 13, 2024 · 2:15 PM' : null,
     },
   ]);
   const [showAddApprover, setShowAddApprover] = useState(false);
@@ -559,7 +846,8 @@ function ApprovalsTab({ bill, edits, onEdit, onAction }) {
     setNewApproverName('');
     setNewApproverRole('');
     setShowAddApprover(false);
-    onAction?.('approve', `Added ${newApproverName.trim()} as approver on ${bill.invoiceNumber}`);
+    // Just show a toast notification without changing status
+    onAction?.('flag', `Added ${newApproverName.trim()} as approver on ${bill.invoiceNumber}`);
   };
 
   const handleRemoveApprover = (id) => {
@@ -775,9 +1063,6 @@ function ActivityTab({ bill }) {
     ...(bill.status === 'Paid' ? [
       { time: `${fmtShort(bill.dueDate)} · 2:00 PM`, who: 'System', action: `Payment sent via ${bill.paymentMethod} — ${fmt(bill.amount)}`, icon: Banknote },
     ] : []),
-    ...(bill.status === 'Scheduled' ? [
-      { time: `${fmtShort(bill.dueDate)} · 9:00 AM`, who: 'System', action: `Payment scheduled for ${fmtShort(bill.dueDate)}`, icon: Calendar },
-    ] : []),
   ];
 
   return (
@@ -829,7 +1114,7 @@ function DrawerFooter({ bill, activeTab, onAction, isDirty, onSave, onOpenUpload
   if (bill.status === 'Draft') {
     return (
       <div className="flex items-center gap-2 flex-wrap justify-center">
-        <button onClick={() => onAction('approve', `Submitted ${bill.invoiceNumber} for approval`)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-4 py-2 hover:bg-stone-800 font-medium">
+        <button onClick={() => onAction('submit-for-approval', `Submitted ${bill.invoiceNumber} for approval`)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-4 py-2 hover:bg-stone-800 font-medium">
           <Send size={13} /> Submit for approval
         </button>
         <button onClick={() => onAction('flag', `Saved draft — ${bill.invoiceNumber}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
@@ -845,16 +1130,16 @@ function DrawerFooter({ bill, activeTab, onAction, isDirty, onSave, onOpenUpload
       <div className="flex items-center gap-2 flex-wrap justify-center">
         {bill.lienWaiverRequired && !bill.lienWaiverAttached && (
           <>
-            <button onClick={() => onAction('approve', `Lien waiver requested from ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-3 py-2 hover:bg-stone-800 font-medium">
+            <button onClick={() => onAction('lien-waiver-requested', `Lien waiver requested from ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-3 py-2 hover:bg-stone-800 font-medium">
               <Send size={13} /> Request waiver
             </button>
-            <button onClick={() => onOpenUpload('Upload Lien Waiver')} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
+            <button onClick={() => onOpenUpload('Upload Lien Waiver', 'lien-waiver')} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
               <Upload size={13} /> Upload
             </button>
           </>
         )}
         {bill.lienWaiverAttached && (
-          <button onClick={() => onAction('approve', `Downloaded waiver for ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
+          <button onClick={() => onAction('download-receipt', `Downloaded waiver for ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
             <Download size={13} /> Download waiver
           </button>
         )}
@@ -862,14 +1147,19 @@ function DrawerFooter({ bill, activeTab, onAction, isDirty, onSave, onOpenUpload
     );
   }
 
-  // Pending / For Approval
-  if (bill.status === 'Pending' || bill.status === 'For Approval') {
+  // For Approval
+  if (bill.status === 'For Approval') {
     return (
       <div className="flex items-center gap-2 flex-wrap justify-center">
-        <button onClick={() => onAction('approve', `Approved invoice ${bill.invoiceNumber} — ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm bg-emerald-600 text-white rounded-lg px-4 py-2 hover:bg-emerald-700 font-medium">
+        <button onClick={() => onAction('approve-check', `Approved invoice ${bill.invoiceNumber} — ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm bg-emerald-600 text-white rounded-lg px-4 py-2 hover:bg-emerald-700 font-medium">
           <Check size={13} /> Approve
         </button>
-        <button onClick={() => onAction('flag', `Requested changes on ${bill.invoiceNumber}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
+        {bill.lienWaiverRequired && !bill.lienWaiverAttached && (
+          <button onClick={() => onAction('lien-waiver-requested', `Lien waiver requested from ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
+            <Send size={13} /> Request waiver
+          </button>
+        )}
+        <button onClick={() => onAction('request-changes-modal', bill.vendor)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
           <MessageSquare size={13} /> Request changes
         </button>
         <button onClick={() => onAction('reject', `Rejected invoice ${bill.invoiceNumber} — ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm text-red-600 border border-red-200 rounded-lg px-3 py-2 hover:bg-red-50 font-medium">
@@ -879,29 +1169,55 @@ function DrawerFooter({ bill, activeTab, onAction, isDirty, onSave, onOpenUpload
     );
   }
 
-  // Scheduled
-  if (bill.status === 'Scheduled') {
+  // Approved (ready for payment)
+  if (bill.status === 'Approved') {
     return (
       <div className="flex items-center gap-2 flex-wrap justify-center">
-        <button onClick={() => onAction('approve', `Payment scheduled for ${bill.invoiceNumber}`)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-4 py-2 hover:bg-stone-800 font-medium">
-          <Calendar size={13} /> Schedule payment
+        <button onClick={() => onAction('submit-payment', `Submitted payment for ${bill.invoiceNumber} — ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm bg-emerald-600 text-white rounded-lg px-4 py-2 hover:bg-emerald-700 font-medium">
+          <Banknote size={13} /> Submit payment
         </button>
-        <button onClick={() => onAction('pay', `Paid ${fmt(bill.amount)} to ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm bg-emerald-600 text-white rounded-lg px-3 py-2 hover:bg-emerald-700 font-medium">
-          <Banknote size={13} /> Pay now
+        <button onClick={() => onAction('schedule-payment-modal', `Scheduled payment for ${bill.invoiceNumber} — ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
+          <Calendar size={13} /> Schedule payment
         </button>
       </div>
     );
   }
 
+  // Changes Requested (flagged for changes)
+  if (bill.status === 'Changes Requested') {
+    return (
+      <div className="flex items-center gap-2 flex-wrap justify-center">
+        <button
+          onClick={onSave}
+          className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-4 py-2 hover:bg-stone-800 font-medium"
+        >
+          <Save size={13} /> Save Changes
+        </button>
+      </div>
+    );
+  }
+
+  // Missing Lien Waiver
+  if (bill.status === 'Missing Lien Waiver') {
+    return (
+      <div className="flex items-center gap-2 flex-wrap justify-center">
+        <button onClick={() => onAction('lien-waiver-requested', `Lien waiver requested from ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-3 py-2 hover:bg-stone-800 font-medium">
+          <Send size={13} /> Request waiver
+        </button>
+        <button onClick={() => onOpenUpload('Upload Lien Waiver', 'lien-waiver')} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
+          <Upload size={13} /> Upload
+        </button>
+      </div>
+    );
+  }
+
+
   // Paid / History
   if (bill.status === 'Paid') {
     return (
       <div className="flex items-center gap-2 flex-wrap justify-center">
-        <button onClick={() => onAction('approve', `Downloaded receipt for ${bill.invoiceNumber}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
+        <button onClick={() => onAction('download-receipt', `Downloaded receipt for ${bill.invoiceNumber}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
           <Download size={13} /> Download receipt
-        </button>
-        <button onClick={() => onAction('approve', `Viewing audit trail for ${bill.invoiceNumber}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
-          <ExternalLink size={13} /> View audit trail
         </button>
       </div>
     );
@@ -914,8 +1230,16 @@ function DrawerFooter({ bill, activeTab, onAction, isDirty, onSave, onOpenUpload
         <button onClick={() => onAction('pay', `Paid ${fmt(bill.amount)} to ${bill.vendor} (overdue)`)} className="flex items-center gap-1.5 text-sm bg-red-600 text-white rounded-lg px-4 py-2 hover:bg-red-700 font-medium">
           <Banknote size={13} /> Pay now
         </button>
-        <button onClick={() => onAction('approve', `Payment scheduled for ${bill.invoiceNumber}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-3 py-2 hover:bg-stone-50 font-medium">
-          <Calendar size={13} /> Schedule payment
+      </div>
+    );
+  }
+
+  // Rejected
+  if (bill.status === 'Rejected') {
+    return (
+      <div className="flex items-center gap-2 flex-wrap justify-center">
+        <button onClick={() => onAction('reopen', `Re-opened ${bill.invoiceNumber} — ${bill.vendor}`)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-4 py-2 hover:bg-stone-800 font-medium">
+          <FileText size={13} /> Re-open
         </button>
       </div>
     );
@@ -942,7 +1266,16 @@ export default function InvoiceDrawer({ bill, onClose, onAction, initialTab, pag
   const previousFocusRef = useRef(null);
 
   // Upload modal state
-  const [uploadModal, setUploadModal] = useState({ open: false, title: '' });
+  const [uploadModal, setUploadModal] = useState({ open: false, title: '', uploadType: '' });
+
+  // Request changes modal state
+  const [requestChangesModal, setRequestChangesModal] = useState({ open: false });
+
+  // Lien waiver warning modal state
+  const [lienWaiverWarningModal, setLienWaiverWarningModal] = useState({ open: false });
+
+  // Schedule payment modal state
+  const [schedulePaymentModal, setSchedulePaymentModal] = useState({ open: false });
 
   // Editable fields — initialised from bill
   const [edits, setEdits] = useState({});
@@ -956,6 +1289,9 @@ export default function InvoiceDrawer({ bill, onClose, onAction, initialTab, pag
         owner: `${bill.owner} (${bill.ownerRole})`,
         project: bill.project,
         costCode: `${bill.costCode} · ${(costCodes.find(c => c.code === bill.costCode)?.name) || 'Unknown'}`,
+        invoiceDate: bill.invoiceDate,
+        dueDate: bill.dueDate,
+        amount: bill.amount.toString(),
         retainagePct: bill.amount > 0 ? ((bill.retainageWithheld / bill.amount) * 100).toFixed(1) : '0.0',
         retainageWithheld: bill.retainageWithheld.toString(),
         approvalNote: '',
@@ -974,25 +1310,95 @@ export default function InvoiceDrawer({ bill, onClose, onAction, initialTab, pag
 
   const handleSave = useCallback(() => {
     setSavedEdits({ ...edits });
-    onAction?.('approve', `Saved changes to ${bill?.invoiceNumber}`);
+    // Handle different save behaviors based on status
+    if (bill?.status === 'Changes Requested') {
+      // Changes Requested → For Approval
+      onAction?.('save-changes', `Saved changes to ${bill?.invoiceNumber}`, edits);
+    } else if (bill?.status === 'Draft') {
+      // Draft → stays Draft, just saves edits
+      onAction?.('save-draft', `Saved draft — ${bill?.invoiceNumber}`, edits);
+    } else {
+      // All other statuses → Approved
+      onAction?.('approve', `Saved changes to ${bill?.invoiceNumber}`, edits);
+    }
   }, [edits, bill, onAction]);
 
   // Handle action from buttons
   const handleAction = useCallback((type, message) => {
+    // Special handling for request-changes-modal
+    if (type === 'request-changes-modal') {
+      setRequestChangesModal({ open: true });
+      return;
+    }
+    // Special handling for approve-check - check if lien waiver is missing
+    if (type === 'approve-check') {
+      if (bill?.lienWaiverRequired && !bill?.lienWaiverAttached) {
+        // Show warning modal
+        setLienWaiverWarningModal({ open: true });
+        return;
+      }
+      // No lien waiver issue, proceed with approval
+      onAction?.('approve', message);
+      return;
+    }
+    // Special handling for schedule-payment-modal
+    if (type === 'schedule-payment-modal') {
+      setSchedulePaymentModal({ open: true });
+      return;
+    }
     onAction?.(type, message);
-  }, [onAction]);
+  }, [onAction, bill]);
 
   // Upload modal
-  const openUpload = useCallback((title) => {
-    setUploadModal({ open: true, title });
+  const openUpload = useCallback((title, uploadType = '') => {
+    setUploadModal({ open: true, title, uploadType });
   }, []);
 
   const closeUpload = useCallback(() => {
-    setUploadModal({ open: false, title: '' });
+    setUploadModal({ open: false, title: '', uploadType: '' });
   }, []);
 
-  const handleUploadSubmit = useCallback((files) => {
-    onAction?.('approve', `Uploaded ${files.length} file${files.length > 1 ? 's' : ''} to ${bill?.invoiceNumber}`);
+  const handleUploadSubmit = useCallback((files, uploadType) => {
+    // If uploading lien waiver, mark it as attached
+    if (uploadType === 'lien-waiver' && bill?.lienWaiverRequired) {
+      onAction?.('lien-waiver-uploaded', `Uploaded lien waiver for ${bill?.invoiceNumber}`);
+    } else {
+      onAction?.('approve', `Uploaded ${files.length} file${files.length > 1 ? 's' : ''} to ${bill?.invoiceNumber}`);
+    }
+  }, [bill, onAction]);
+
+  // Request changes modal handlers
+  const openRequestChangesModal = useCallback(() => {
+    setRequestChangesModal({ open: true });
+  }, []);
+
+  const closeRequestChangesModal = useCallback(() => {
+    setRequestChangesModal({ open: false });
+  }, []);
+
+  const handleRequestChangesSubmit = useCallback((comments) => {
+    onAction?.('request-changes', `Requested changes on ${bill?.invoiceNumber}: ${comments}`);
+  }, [bill, onAction]);
+
+  // Lien waiver warning modal handlers
+  const closeLienWaiverWarningModal = useCallback(() => {
+    setLienWaiverWarningModal({ open: false });
+  }, []);
+
+  const handleLienWaiverWarningProceed = useCallback(() => {
+    // User chose to approve anyway despite missing lien waiver
+    setLienWaiverWarningModal({ open: false });
+    onAction?.('approve', `Approved invoice ${bill?.invoiceNumber} — ${bill?.vendor} (without lien waiver)`);
+  }, [bill, onAction]);
+
+  // Schedule payment modal handlers
+  const closeSchedulePaymentModal = useCallback(() => {
+    setSchedulePaymentModal({ open: false });
+  }, []);
+
+  const handleSchedulePaymentSubmit = useCallback((selectedDate) => {
+    setSchedulePaymentModal({ open: false });
+    onAction?.('schedule-payment', `Scheduled payment for ${bill?.invoiceNumber} — ${bill?.vendor}`, { paymentDate: selectedDate });
   }, [bill, onAction]);
 
   // Tab sync
@@ -1131,7 +1537,32 @@ export default function InvoiceDrawer({ bill, onClose, onAction, initialTab, pag
         open={uploadModal.open}
         onClose={closeUpload}
         title={uploadModal.title}
+        uploadType={uploadModal.uploadType}
         onSubmit={handleUploadSubmit}
+      />
+
+      {/* Request Changes Modal */}
+      <RequestChangesModal
+        open={requestChangesModal.open}
+        onClose={closeRequestChangesModal}
+        onSubmit={handleRequestChangesSubmit}
+        billVendor={bill?.vendor}
+      />
+
+      {/* Lien Waiver Warning Modal */}
+      <LienWaiverWarningModal
+        open={lienWaiverWarningModal.open}
+        onClose={closeLienWaiverWarningModal}
+        onProceed={handleLienWaiverWarningProceed}
+        billVendor={bill?.vendor}
+      />
+
+      {/* Schedule Payment Modal */}
+      <SchedulePaymentModal
+        open={schedulePaymentModal.open}
+        onClose={closeSchedulePaymentModal}
+        onSubmit={handleSchedulePaymentSubmit}
+        billVendor={bill?.vendor}
       />
 
       <style>{`

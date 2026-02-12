@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import { projects } from '../data/mockData';
+import { deriveCardTransactionStatus, getTransactionBlockers } from '../utils/cardTransactionStatus';
 
 /* ─── Upload Receipt Modal ─── */
 function UploadReceiptModal({ onClose, onSave }) {
@@ -170,31 +171,33 @@ function Divider() {
    - Warning banners, field owner, category, supplier, transaction state,
      review status, approval chain, submission policy, receipts, job note
    ═══════════════════════════════════════════════════════════════ */
-function OverviewContent({ t, onAction }) {
+function OverviewContent({ t, onAction, edits, setEdits, isDirty, setIsDirty }) {
   const [memo, setMemo] = useState(t.memo || '');
   const [showUpload, setShowUpload] = useState(false);
-  const [receiptUploaded, setReceiptUploaded] = useState(t.receiptStatus === 'Attached');
+  const [receiptUploaded, setReceiptUploaded] = useState((edits.receiptStatus || t.receiptStatus) === 'Attached');
+
+  // Compute blockers based on current edits
+  const mergedTransaction = { ...t, ...edits };
+  const blockers = getTransactionBlockers(mergedTransaction);
+  const primaryBlocker = blockers[0];
 
   return (
     <div>
-      {/* ─── Warning banners ─── */}
-      {(t.receiptStatus === 'Missing' || t.policyStatus === 'Missing Project' || t.policyStatus === 'Over Limit') && (
-        <div className="space-y-2 mb-5">
-          {t.receiptStatus === 'Missing' && (
-            <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border border-orange-200 bg-orange-50 text-xs text-orange-800">
-              <Receipt size={14} className="shrink-0 mt-0.5" /> Missing receipt — required for job cost tracking and accounting export
+      {/* ─── Guided Fix Banner ─── */}
+      {primaryBlocker && (
+        <div className="mb-5 px-4 py-3.5 rounded-lg border-2 border-amber-300 bg-amber-50">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-amber-900 mb-1">Action required</div>
+              <div className="text-sm text-amber-800 mb-2">{primaryBlocker.message}</div>
+              <div className="text-xs text-amber-700">
+                {primaryBlocker.type === 'receipt'
+                  ? 'Upload a receipt in the Receipts section below to proceed.'
+                  : 'Add project and cost code in the Job Context tab to proceed.'}
+              </div>
             </div>
-          )}
-          {t.policyStatus === 'Missing Project' && (
-            <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-800">
-              <AlertTriangle size={14} className="shrink-0 mt-0.5" /> Missing project or cost code — cannot export until assigned
-            </div>
-          )}
-          {t.policyStatus === 'Over Limit' && (
-            <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-              <Ban size={14} className="shrink-0 mt-0.5" /> Over policy limit — requires manager approval to proceed
-            </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -312,7 +315,11 @@ function OverviewContent({ t, onAction }) {
       {!receiptUploaded ? (
         <div
           onClick={() => setShowUpload(true)}
-          className="border-2 border-dashed border-amber-300 rounded-lg p-8 text-center cursor-pointer hover:border-amber-400 transition-colors bg-amber-50/30"
+          className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+            primaryBlocker?.type === 'receipt'
+              ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200'
+              : 'border-amber-300 bg-amber-50/30 hover:border-amber-400'
+          }`}
         >
           <div className="flex items-center justify-center gap-2 text-sm text-stone-600">
             <Upload size={16} className="text-stone-500" />
@@ -338,7 +345,8 @@ function OverviewContent({ t, onAction }) {
           onSave={(files) => {
             if (files.length > 0) {
               setReceiptUploaded(true);
-              onAction?.('approve', `Receipt uploaded — ${files.length} file${files.length > 1 ? 's' : ''} saved`);
+              setEdits(prev => ({ ...prev, receiptStatus: 'Attached' }));
+              setIsDirty(true);
             }
           }}
         />
@@ -375,20 +383,69 @@ function OverviewContent({ t, onAction }) {
    - Project info, cost code, budget progress, merchant location,
      weekend flag, emergency toggle
    ═══════════════════════════════════════════════════════════════ */
-function JobContextContent({ t }) {
+function JobContextContent({ t, edits, setEdits, isDirty, setIsDirty }) {
   const [isEmergency, setIsEmergency] = useState(false);
-  const proj = projects.find(p => p.id === t.projectId);
+  const proj = projects.find(p => p.id === (edits.projectId || t.projectId));
   const pctUsed = proj ? (proj.spent / proj.budget) * 100 : 0;
   const budgetRemaining = proj ? proj.budget - proj.spent : 0;
   const isWeekend = [0, 6].includes(new Date(t.date).getDay());
 
+  // Check if there's a coding blocker
+  const mergedTransaction = { ...t, ...edits };
+  const blockers = getTransactionBlockers(mergedTransaction);
+  const hasCodingBlocker = blockers.some(b => b.type === 'coding');
+
+  function handleProjectChange(e) {
+    const selectedProject = projects.find(p => p.name === e.target.value);
+    if (selectedProject) {
+      setEdits(prev => ({ ...prev, projectId: selectedProject.id, project: selectedProject.name, projectCode: selectedProject.code }));
+      setIsDirty(true);
+    }
+  }
+
+  function handleCostCodeChange(e) {
+    setEdits(prev => ({ ...prev, costCode: e.target.value }));
+    setIsDirty(true);
+  }
+
   return (
     <div>
-      <SectionTitle>Project</SectionTitle>
-      <FieldCard label="Project" value={t.project} verified sub={proj?.code} />
-      <FieldCard label="Project Code" value={t.projectCode || '—'} verified={!!t.projectCode} />
-      <FieldCard label="Cost Code" value={t.costCode || '—'} verified={!!t.costCode} />
+      {/* Project Coding Section - highlighted if missing */}
+      <div className={hasCodingBlocker ? 'p-4 -m-4 rounded-lg border-2 border-amber-300 bg-amber-50/30 mb-4' : ''}>
+        <SectionTitle>Project</SectionTitle>
+
+      {/* Editable Project Dropdown */}
+      <div className="bg-stone-50 rounded-lg px-4 py-3 mb-2">
+        <div className="text-xs text-stone-500 mb-1">Project</div>
+        <select
+          value={edits.project || t.project || ''}
+          onChange={handleProjectChange}
+          className="w-full bg-transparent border-none text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-300 rounded"
+        >
+          <option value="">Select project...</option>
+          {projects.map(p => (
+            <option key={p.id} value={p.name}>{p.name}</option>
+          ))}
+        </select>
+        {proj?.code && <div className="text-xs text-stone-500 mt-0.5">{proj.code}</div>}
+      </div>
+
+      <FieldCard label="Project Code" value={edits.projectCode || t.projectCode || '—'} verified={!!(edits.projectCode || t.projectCode)} />
+
+      {/* Editable Cost Code Input */}
+      <div className="bg-stone-50 rounded-lg px-4 py-3 mb-2">
+        <div className="text-xs text-stone-500 mb-1">Cost Code</div>
+        <input
+          type="text"
+          value={edits.costCode || t.costCode || ''}
+          onChange={handleCostCodeChange}
+          placeholder="Enter cost code..."
+          className="w-full bg-transparent border-none text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-300 rounded px-0"
+        />
+      </div>
+
       <FieldCard label="Job Phase / Trade" value={t.trade} verified />
+      </div>
 
       {/* Budget mini progress */}
       {proj && (
@@ -644,10 +701,57 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
   const t = transaction;
   if (!t) return null;
 
+  // Editable state management
+  const [edits, setEdits] = useState({
+    projectId: t.projectId || '',
+    project: t.project || '',
+    projectCode: t.projectCode || '',
+    costCode: t.costCode || '',
+    receiptStatus: t.receiptStatus || 'Missing',
+  });
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Compute current status based on edits
+  const mergedTransaction = { ...t, ...edits };
+  const derivedStatus = deriveCardTransactionStatus(mergedTransaction);
+  const blockers = getTransactionBlockers(mergedTransaction);
+
   const displayStatus = t.policyStatus !== 'OK' ? t.policyStatus : t.approvalStatus;
 
-  function handleAction(type, message) {
-    onAction?.(type, message);
+  function handleAction(type, message, extraData) {
+    onAction?.(type, message, extraData);
+  }
+
+  function handleSave() {
+    // Save changes and trigger recalculation
+    const updatedFields = {
+      projectId: edits.projectId,
+      project: edits.project,
+      projectCode: edits.projectCode,
+      costCode: edits.costCode,
+      receiptStatus: edits.receiptStatus,
+    };
+
+    // If blockers resolved, set approvalStatus to pending
+    if (blockers.length === 0 && t.approvalStatus !== 'Approved') {
+      updatedFields.approvalStatus = 'Needs Review';
+    }
+
+    handleAction('save', 'Changes saved successfully', updatedFields);
+    setIsDirty(false);
+    onClose();
+  }
+
+  function handleCancel() {
+    // Revert changes
+    setEdits({
+      projectId: t.projectId || '',
+      project: t.project || '',
+      projectCode: t.projectCode || '',
+      costCode: t.costCode || '',
+      receiptStatus: t.receiptStatus || 'Missing',
+    });
+    setIsDirty(false);
   }
 
   return (
@@ -701,65 +805,92 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
 
         {/* ─── Scrollable content ─── */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {activeTab === 'Overview' && <OverviewContent t={t} onAction={handleAction} />}
-          {activeTab === 'Job Context' && <JobContextContent t={t} />}
+          {activeTab === 'Overview' && <OverviewContent t={t} onAction={handleAction} edits={edits} setEdits={setEdits} isDirty={isDirty} setIsDirty={setIsDirty} />}
+          {activeTab === 'Job Context' && <JobContextContent t={t} edits={edits} setEdits={setEdits} isDirty={isDirty} setIsDirty={setIsDirty} />}
           {activeTab === 'Activity' && <ActivityContent t={t} />}
         </div>
 
-        {/* ─── Persistent footer ─── */}
+        {/* ─── Dynamic footer ─── */}
         <div className="border-t border-stone-200 px-6 py-3 bg-white flex items-center justify-center gap-3 shrink-0">
-          {t.approvalStatus === 'Needs Review' && (
+          {isDirty ? (
+            // Sticky Save Footer
             <>
               <button
-                onClick={() => handleAction('approve', `Transaction ${t.supplier} — ${fmt(t.amount)} approved`)}
-                className="flex items-center gap-2 text-sm bg-emerald-600 text-white rounded-lg px-5 py-2.5 hover:bg-emerald-700 font-medium"
+                onClick={handleSave}
+                className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
               >
-                <Check size={14} /> Approve
+                <Check size={14} /> Save
               </button>
               <button
-                onClick={() => handleAction('flag', `Transaction ${t.supplier} flagged for review`)}
+                onClick={handleCancel}
                 className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
               >
-                <Flag size={14} /> Flag for review
-              </button>
-              <button
-                onClick={() => handleAction('reject', `Transaction ${t.supplier} disputed`)}
-                className="flex items-center gap-2 text-sm text-red-600 border border-red-200 rounded-lg px-5 py-2.5 hover:bg-red-50 font-medium"
-              >
-                <AlertTriangle size={14} /> Dispute
+                Cancel
               </button>
             </>
-          )}
-          {t.approvalStatus === 'Waiting on Cardholder' && (
+          ) : (
+            // Action buttons based on derived status
             <>
-              <button
-                onClick={() => handleAction('flag', `Reminder sent to ${t.cardholder} for ${t.supplier} transaction`)}
-                className="flex items-center gap-2 text-sm bg-amber-600 text-white rounded-lg px-5 py-2.5 hover:bg-amber-700 font-medium"
-              >
-                <Send size={14} /> Send reminder
-              </button>
-              <button
-                onClick={() => handleAction('reject', `Transaction ${t.supplier} disputed`)}
-                className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
-              >
-                <AlertTriangle size={14} /> Dispute
-              </button>
-            </>
-          )}
-          {t.approvalStatus === 'Approved' && (
-            <>
-              <button
-                onClick={() => handleAction('flag', `Transaction ${t.supplier} flagged for review`)}
-                className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
-              >
-                <Flag size={14} /> Flag for review
-              </button>
-              <button
-                onClick={() => handleAction('approve', `Card limit updated for ${t.cardholder}`)}
-                className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
-              >
-                <CreditCard size={14} /> Change limit
-              </button>
+              {derivedStatus === 'Needs review' && (
+                <>
+                  <button
+                    onClick={() => handleAction('approve', `Transaction ${t.supplier} — ${fmt(t.amount)} approved`, { approvalStatus: 'Approved' })}
+                    className="flex items-center gap-2 text-sm bg-emerald-600 text-white rounded-lg px-5 py-2.5 hover:bg-emerald-700 font-medium"
+                  >
+                    <Check size={14} /> Approve
+                  </button>
+                  <button
+                    onClick={() => handleAction('flag', `Transaction ${t.supplier} flagged for review`)}
+                    className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
+                  >
+                    <Flag size={14} /> Flag for review
+                  </button>
+                  <button
+                    onClick={() => handleAction('reject', `Transaction ${t.supplier} disputed`, { approvalStatus: 'Disputed' })}
+                    className="flex items-center gap-2 text-sm text-red-600 border border-red-200 rounded-lg px-5 py-2.5 hover:bg-red-50 font-medium"
+                  >
+                    <AlertTriangle size={14} /> Dispute
+                  </button>
+                </>
+              )}
+              {(derivedStatus === 'Missing receipt' || derivedStatus === 'Missing project coding') && (
+                <>
+                  <button
+                    onClick={() => handleAction('flag', `Reminder sent to ${t.cardholder} for ${t.supplier} transaction`)}
+                    className="flex items-center gap-2 text-sm bg-amber-600 text-white rounded-lg px-5 py-2.5 hover:bg-amber-700 font-medium"
+                  >
+                    <Send size={14} /> Send reminder
+                  </button>
+                  <button
+                    onClick={() => handleAction('reject', `Transaction ${t.supplier} disputed`, { approvalStatus: 'Disputed' })}
+                    className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
+                  >
+                    <AlertTriangle size={14} /> Dispute
+                  </button>
+                </>
+              )}
+              {derivedStatus === 'Approved' && (
+                <>
+                  <button
+                    onClick={() => handleAction('export', `Transaction ${t.supplier} exported to accounting`, { exportedAt: new Date().toISOString() })}
+                    className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                  >
+                    <ArrowUpRight size={14} /> Export to accounting
+                  </button>
+                  <button
+                    onClick={() => handleAction('approve', `Summary downloaded for ${t.supplier}`)}
+                    className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
+                  >
+                    <FileText size={14} /> Download summary
+                  </button>
+                </>
+              )}
+              {derivedStatus === 'Exported' && (
+                <div className="text-sm text-stone-500 flex items-center gap-2">
+                  <Check size={14} className="text-emerald-600" />
+                  Transaction exported on {new Date(t.exportedAt).toLocaleDateString()}
+                </div>
+              )}
             </>
           )}
         </div>

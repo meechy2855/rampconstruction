@@ -3,10 +3,11 @@ import {
   X, ArrowLeft, AlertTriangle, Check, Clock,
   Edit3, Ban, Lock, Flag, MessageSquare,
   DollarSign, FileText, Send, ArrowUpRight,
-  Receipt, Shield, ExternalLink,
+  Receipt, Shield, ExternalLink, Download, Eye,
 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
-import { projects, costCodes } from '../data/mockData';
+import { projects, costCodes, bills } from '../data/mockData';
+import { getDisplayName, derivePOStatus } from '../utils/procurementTypeGuards';
 
 /* ─── Helpers ─── */
 function fmt(n) {
@@ -223,10 +224,12 @@ function CommitmentsTab({ po }) {
 }
 
 /* ═══════════════════════════════════════════════
-   TAB 3: Invoices (PO → AP Bridge)
+   View Invoices Modal (for closed POs)
    ═══════════════════════════════════════════════ */
-function InvoicesTab({ po }) {
-  const invoices = po.invoices || [];
+function ViewInvoicesModal({ po, onClose }) {
+  const linkedInvoices = (po.invoices || []).filter(inv => inv.poId === String(po.id));
+  const totalInvoiced = linkedInvoices.reduce((sum, inv) => sum + inv.amount, 0);
+  const totalRetainage = linkedInvoices.reduce((sum, inv) => sum + (inv.retainage || 0), 0);
 
   const lienWaiverColor = (status) => {
     if (status === 'Received') return 'text-emerald-600';
@@ -234,25 +237,370 @@ function InvoicesTab({ po }) {
     return 'text-stone-400';
   };
 
+  const getBillPayStatusColor = (status) => {
+    if (status === 'PAID') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    if (status === 'SCHEDULED') return 'bg-blue-50 text-blue-700 border-blue-200';
+    if (status === 'FOR_APPROVAL') return 'bg-amber-50 text-amber-700 border-amber-200';
+    return 'bg-stone-50 text-stone-700 border-stone-200';
+  };
+
+  const getBillPayStatusLabel = (status) => {
+    if (status === 'PAID') return 'Paid';
+    if (status === 'SCHEDULED') return 'Scheduled';
+    if (status === 'FOR_APPROVAL') return 'For Approval';
+    return 'Draft';
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-50" onClick={onClose} />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-2xl border border-stone-200 z-50 w-[600px] max-h-[700px] flex flex-col">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-stone-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-stone-900">Linked Invoices</h2>
+            <button onClick={onClose} className="p-1 rounded-lg hover:bg-stone-100 text-stone-400">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-sm text-stone-500 mt-1">
+            {linkedInvoices.length} invoice{linkedInvoices.length !== 1 ? 's' : ''} linked to {po.name}
+          </p>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {linkedInvoices.length === 0 ? (
+            <div className="text-center py-8">
+              <Receipt size={32} className="mx-auto text-stone-300 mb-2" />
+              <p className="text-sm text-stone-500">No invoices linked to this PO</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {linkedInvoices.map(inv => (
+                <div key={inv.id} className="border border-stone-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Receipt size={14} className="text-stone-500" />
+                      <span className="text-sm font-semibold text-stone-900">{inv.number}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {inv.exception && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                          <AlertTriangle size={10} className="mr-1" />
+                          Over-billing
+                        </span>
+                      )}
+                      {inv.billPay && (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getBillPayStatusColor(inv.billPay.status)}`}>
+                          {getBillPayStatusLabel(inv.billPay.status)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 text-xs mb-3">
+                    <div>
+                      <div className="text-stone-500">Invoice Amount</div>
+                      <div className="text-stone-900 font-semibold">{fmt(inv.amount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-stone-500">Retainage</div>
+                      <div className="text-stone-900 font-medium">{fmt(inv.retainage || 0)}</div>
+                    </div>
+                    <div>
+                      <div className="text-stone-500">Invoice Date</div>
+                      <div className="text-stone-900">{fmtShort(inv.date)}</div>
+                    </div>
+                  </div>
+
+                  {/* Lien waiver */}
+                  <div className="flex items-center gap-1.5 pt-2 border-t border-stone-100">
+                    <Shield size={12} className={lienWaiverColor(inv.lienWaiver)} />
+                    <span className={`text-xs font-medium ${lienWaiverColor(inv.lienWaiver)}`}>
+                      Lien waiver: {inv.lienWaiver || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Summary */}
+          {linkedInvoices.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-stone-200">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-stone-700">Total Invoiced:</span>
+                <span className="font-semibold text-stone-900">{fmt(totalInvoiced)}</span>
+              </div>
+              {totalRetainage > 0 && (
+                <div className="flex items-center justify-between text-sm mt-1">
+                  <span className="font-medium text-stone-700">Total Retainage:</span>
+                  <span className="font-semibold text-stone-900">{fmt(totalRetainage)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-sm mt-1">
+                <span className="font-medium text-stone-700">PO Amount:</span>
+                <span className="font-semibold text-stone-900">{fmt(po.totalAmount)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm mt-1 pt-2 border-t border-stone-100">
+                <span className="font-medium text-stone-700">Remaining:</span>
+                <span className={`font-semibold ${po.totalAmount - totalInvoiced < 0 ? 'text-red-600' : 'text-stone-900'}`}>
+                  {fmt(po.totalAmount - totalInvoiced)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-stone-200 px-6 py-3 flex items-center justify-end">
+          <button
+            onClick={onClose}
+            className="text-sm px-4 py-2 bg-stone-900 text-white rounded-lg hover:bg-stone-800 font-medium"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Match Invoice Modal (Link Invoice to PO)
+   ═══════════════════════════════════════════════ */
+function MatchInvoiceModal({ po, onClose, onMatch }) {
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [flagOverbilling, setFlagOverbilling] = useState(false);
+
+  // Get IDs of invoices already linked to this PO
+  const linkedInvoiceIds = (po.invoices || [])
+    .filter(inv => inv.poId === String(po.id))
+    .map(inv => inv.id);
+
+  // Find unlinked invoices for the same supplier, excluding already-linked ones
+  const unmatchedInvoices = bills.filter(
+    bill => bill.vendor === po.supplier &&
+            !bill.poId &&
+            !linkedInvoiceIds.includes(bill.id)
+  );
+
+  const remaining = po.totalAmount - (po.billedAmount || 0);
+  const wouldExceed = selectedInvoice && selectedInvoice.amount > remaining;
+  const excess = wouldExceed ? selectedInvoice.amount - remaining : 0;
+
+  const handleSelect = (invoice) => {
+    setSelectedInvoice(invoice);
+    setFlagOverbilling(false);
+  };
+
+  const handleMatch = () => {
+    if (!selectedInvoice) return;
+
+    // If over-billing but not flagged, prevent match
+    if (wouldExceed && !flagOverbilling) return;
+
+    onMatch(selectedInvoice, flagOverbilling);
+    onClose();
+  };
+
+  const canMatch = selectedInvoice && (!wouldExceed || flagOverbilling);
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-50" onClick={onClose} />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-2xl border border-stone-200 z-50 w-[500px] max-h-[600px] flex flex-col">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-stone-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-stone-900">Link Invoice to PO</h2>
+            <button onClick={onClose} className="p-1 rounded-lg hover:bg-stone-100 text-stone-400">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-sm text-stone-500 mt-1">
+            Select an unlinked invoice for {po.supplier}
+          </p>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {unmatchedInvoices.length === 0 ? (
+            <div className="text-center py-8">
+              <Receipt size={32} className="mx-auto text-stone-300 mb-2" />
+              <p className="text-sm text-stone-500">No unmatched invoices found for {po.supplier}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {unmatchedInvoices.map((invoice) => {
+                const isSelected = selectedInvoice?.id === invoice.id;
+                const thisWouldExceed = invoice.amount > remaining;
+                return (
+                  <button
+                    key={invoice.id}
+                    onClick={() => handleSelect(invoice)}
+                    className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all ${
+                      isSelected
+                        ? 'border-stone-900 bg-stone-50'
+                        : 'border-stone-200 hover:border-stone-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-stone-900">{invoice.invoiceNumber}</span>
+                      <span className="text-sm font-semibold text-stone-900">{fmt(invoice.amount)}</span>
+                    </div>
+                    <div className="text-xs text-stone-500">
+                      {fmtShort(invoice.invoiceDate)} · {invoice.project}
+                    </div>
+                    {thisWouldExceed && (
+                      <div className="flex items-center gap-1 mt-1.5 text-xs text-red-600">
+                        <AlertTriangle size={12} />
+                        Exceeds remaining by {fmt(invoice.amount - remaining)}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* PO Summary */}
+          <div className="mt-4 pt-4 border-t border-stone-200">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <div className="text-stone-500">PO Committed</div>
+                <div className="text-stone-900 font-medium">{fmt(po.totalAmount)}</div>
+              </div>
+              <div>
+                <div className="text-stone-500">Remaining</div>
+                <div className={`font-medium ${remaining < 0 ? 'text-red-600' : 'text-stone-900'}`}>
+                  {fmt(remaining)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Over-billing Warning & Override */}
+          {wouldExceed && (
+            <div className="mt-3 space-y-2">
+              <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2">
+                <AlertTriangle size={14} className="text-red-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="text-xs text-red-700 font-medium block">Invoice exceeds remaining PO by {fmt(excess)}</span>
+                  <span className="text-xs text-red-600 block mt-0.5">Linking will flag this invoice for over-billing review.</span>
+                </div>
+              </div>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={flagOverbilling}
+                  onChange={(e) => setFlagOverbilling(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span className="text-xs text-stone-700">Flag over-billing and link anyway</span>
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-stone-200 px-6 py-3 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="text-sm px-4 py-2 border border-stone-200 rounded-lg hover:bg-stone-50 text-stone-700 font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleMatch}
+            disabled={!canMatch}
+            className="text-sm px-4 py-2 bg-stone-900 text-white rounded-lg hover:bg-stone-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          >
+            <Check size={14} />
+            Link Invoice
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   TAB 3: Invoices (PO → AP Bridge)
+   ═══════════════════════════════════════════════ */
+function InvoicesTab({ po, onOpenMatchModal, onFlagInvoice, onSendToBillPay, onRemoveInvoice }) {
+  const [showUnlinked, setShowUnlinked] = useState(false);
+
+  // Linked invoices: invoices with poId matching this PO
+  const linkedInvoices = (po.invoices || []).filter(inv => inv.poId === String(po.id));
+
+  // Unlinked invoices: bills from same vendor (and project) with no poId
+  const unlinkedInvoices = bills.filter(
+    bill => bill.vendor === po.supplier && !bill.poId && bill.projectId === po.projectId
+  );
+
+  const lienWaiverColor = (status) => {
+    if (status === 'Received') return 'text-emerald-600';
+    if (status === 'Pending') return 'text-amber-600';
+    return 'text-stone-400';
+  };
+
+  const getBillPayStatusColor = (status) => {
+    if (status === 'PAID') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    if (status === 'SCHEDULED') return 'bg-blue-50 text-blue-700 border-blue-200';
+    if (status === 'FOR_APPROVAL') return 'bg-amber-50 text-amber-700 border-amber-200';
+    return 'bg-stone-50 text-stone-700 border-stone-200';
+  };
+
+  const getBillPayStatusLabel = (status) => {
+    if (status === 'PAID') return 'Paid';
+    if (status === 'SCHEDULED') return 'Scheduled';
+    if (status === 'FOR_APPROVAL') return 'For Approval';
+    return 'Draft';
+  };
+
+  const canSendToBillPay = (inv) => {
+    // Must be linked, matched, no exception, and lien waiver received if required
+    return inv.poId === String(po.id) &&
+           inv.matchStatus === 'MATCHED' &&
+           !inv.exception &&
+           (inv.lienWaiver === 'Received' || inv.lienWaiver !== 'Pending');
+  };
+
   return (
     <div>
+      {/* Linked Invoices */}
       <SectionTitle right={
-        <span className="text-xs text-stone-500">{invoices.length} invoice{invoices.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-stone-500">{linkedInvoices.length} linked</span>
       }>
         Linked Invoices
       </SectionTitle>
 
-      {invoices.length > 0 ? (
+      {linkedInvoices.length > 0 ? (
         <div className="space-y-3">
-          {invoices.map(inv => (
+          {linkedInvoices.map(inv => (
             <div key={inv.id} className="border border-stone-200 rounded-xl p-4 hover:bg-stone-50 transition-colors">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Receipt size={14} className="text-stone-500" />
                   <span className="text-sm font-medium text-stone-900">{inv.number}</span>
                 </div>
-                <StatusBadge status={inv.status} />
+                <div className="flex items-center gap-1.5">
+                  {inv.exception && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                      <AlertTriangle size={10} className="mr-1" />
+                      Over-billing flagged
+                    </span>
+                  )}
+                  {inv.billPay && (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getBillPayStatusColor(inv.billPay.status)}`}>
+                      Bill Pay: {getBillPayStatusLabel(inv.billPay.status)}
+                    </span>
+                  )}
+                </div>
               </div>
+
               <div className="grid grid-cols-3 gap-3 text-xs">
                 <div>
                   <div className="text-stone-500">Amount</div>
@@ -267,12 +615,45 @@ function InvoicesTab({ po }) {
                   <div className="text-stone-900">{fmtShort(inv.date)}</div>
                 </div>
               </div>
+
               {/* Lien waiver */}
-              <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-stone-100">
-                <Shield size={12} className={lienWaiverColor(inv.lienWaiver)} />
-                <span className={`text-xs font-medium ${lienWaiverColor(inv.lienWaiver)}`}>
-                  Lien waiver: {inv.lienWaiver || 'N/A'}
-                </span>
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-stone-100">
+                <div className="flex items-center gap-1.5">
+                  <Shield size={12} className={lienWaiverColor(inv.lienWaiver)} />
+                  <span className={`text-xs font-medium ${lienWaiverColor(inv.lienWaiver)}`}>
+                    Lien waiver: {inv.lienWaiver || 'N/A'}
+                  </span>
+                </div>
+
+                {/* Invoice Actions */}
+                <div className="flex items-center gap-1">
+                  {inv.exception && (
+                    <button
+                      onClick={() => onFlagInvoice(inv, false)}
+                      className="text-xs px-2 py-1 border border-stone-200 rounded hover:bg-stone-100 text-stone-600"
+                      title="Clear exception"
+                    >
+                      Clear flag
+                    </button>
+                  )}
+                  {!inv.billPay && (
+                    <button
+                      onClick={() => onSendToBillPay(inv)}
+                      disabled={!canSendToBillPay(inv)}
+                      className="text-xs px-2 py-1 border border-stone-200 rounded hover:bg-stone-100 text-stone-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                      title={!canSendToBillPay(inv) ? 'Invoice must be matched and exception-free' : 'Send to Bill Pay'}
+                    >
+                      <Send size={10} /> Send to Bill Pay
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onRemoveInvoice(inv)}
+                    className="text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50 text-red-600 flex items-center gap-1"
+                    title="Remove invoice from PO"
+                  >
+                    <X size={10} /> Remove
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -280,24 +661,57 @@ function InvoicesTab({ po }) {
       ) : (
         <div className="border-2 border-dashed border-stone-200 rounded-xl p-8 text-center">
           <div className="text-sm text-stone-500">No invoices linked yet</div>
-          <div className="text-xs text-stone-400 mt-1">Invoices will appear after matching in Bill Pay</div>
+          <div className="text-xs text-stone-400 mt-1">Link invoices from the Unlinked section below</div>
         </div>
       )}
 
-      {/* Actions */}
-      {invoices.length > 0 && (
-        <div className="flex items-center gap-2 mt-4">
-          <button className="text-xs border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50 text-stone-700 font-medium flex items-center gap-1">
-            <DollarSign size={12} /> Match invoice
-          </button>
-          <button className="text-xs border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50 text-stone-700 font-medium flex items-center gap-1">
-            <Flag size={12} /> Flag over-billing
-          </button>
-          <button className="text-xs border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50 text-stone-700 font-medium flex items-center gap-1">
-            <Send size={12} /> Send to Bill Pay
-          </button>
-        </div>
-      )}
+      <Divider />
+
+      {/* Unlinked Invoices (Collapsible) */}
+      <div>
+        <button
+          onClick={() => setShowUnlinked(!showUnlinked)}
+          className="w-full flex items-center justify-between group mb-3"
+        >
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold text-stone-900 tracking-tight">Unlinked Invoices</h2>
+            <span className="text-xs text-stone-500">{unlinkedInvoices.length} available</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {unlinkedInvoices.length > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenMatchModal(); }}
+                className="text-xs border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50 text-stone-700 font-medium flex items-center gap-1"
+              >
+                <DollarSign size={12} /> Link invoice
+              </button>
+            )}
+            <span className={`text-xs text-stone-400 transition-transform ${showUnlinked ? 'rotate-180' : ''}`}>▼</span>
+          </div>
+        </button>
+
+        {showUnlinked && (
+          <div className="space-y-2">
+            {unlinkedInvoices.length > 0 ? (
+              unlinkedInvoices.map(inv => (
+                <div key={inv.id} className="border border-stone-200 rounded-lg p-3 bg-stone-50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-stone-900">{inv.invoiceNumber}</div>
+                      <div className="text-xs text-stone-500">{fmtShort(inv.invoiceDate)} · {inv.project}</div>
+                    </div>
+                    <div className="text-sm font-semibold text-stone-900">{fmt(inv.amount)}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-6 text-sm text-stone-500">
+                No unlinked invoices for {po.supplier}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -434,7 +848,27 @@ function ActivityTab({ po }) {
 const TABS = ['Overview', 'Commitments', 'Invoices', 'Accounting', 'Activity'];
 
 /* ─── Editable Field ─── */
-function EditableFieldCard({ label, value, onChange, type = 'text' }) {
+function EditableFieldCard({ label, value, onChange, type = 'text', options = null }) {
+  if (options) {
+    return (
+      <div className="bg-stone-50 rounded-lg px-4 py-3 mb-2 border border-stone-200">
+        <div className="text-xs text-stone-500 mb-1">{label}</div>
+        <select
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="w-full text-sm text-stone-800 bg-transparent border-none outline-none focus:ring-0 p-0"
+        >
+          <option value="">Select...</option>
+          {options.map(opt => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-stone-50 rounded-lg px-4 py-3 mb-2 border border-stone-200">
       <div className="text-xs text-stone-500 mb-1">{label}</div>
@@ -451,13 +885,23 @@ function EditableFieldCard({ label, value, onChange, type = 'text' }) {
 export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [isEditing, setIsEditing] = useState(false);
+  const [showMatchModal, setShowMatchModal] = useState(false);
+  const [showViewInvoicesModal, setShowViewInvoicesModal] = useState(false);
 
-  // Editable fields
+  // Editable fields - ALL PO fields
   const [edits, setEdits] = useState({
+    name: po?.name || '',
+    project: po?.project || '',
+    projectId: po?.projectId || '',
     supplier: po?.supplier || '',
-    paymentMethod: po?.paymentMethod || '',
+    totalAmount: po?.totalAmount?.toString() || '',
+    costCode: po?.costCode || '',
     category: po?.category || '',
+    paymentMethod: po?.paymentMethod || '',
     term: po?.term || '',
+    description: po?.description || '',
+    jobPhase: po?.jobPhase || '',
+    trade: po?.trade || '',
   });
   const [savedEdits, setSavedEdits] = useState({ ...edits });
 
@@ -467,10 +911,19 @@ export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
     setEdits(prev => ({ ...prev, [key]: value }));
   };
 
+  // Prepare edits for saving - convert types as needed
+  const prepareEditsForSave = () => {
+    return {
+      ...edits,
+      totalAmount: edits.totalAmount ? parseFloat(edits.totalAmount) : 0,
+      projectId: edits.projectId ? parseInt(edits.projectId) : undefined,
+    };
+  };
+
   const handleSave = () => {
     setSavedEdits({ ...edits });
     setIsEditing(false);
-    onAction?.('approve', `Saved changes to ${po.name}`);
+    onAction?.('save-po', `Saved changes to ${po.name}`, { edits: prepareEditsForSave() });
   };
 
   const handleDiscard = () => {
@@ -482,9 +935,44 @@ export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
     onAction?.(type, message);
   };
 
+  const handleMatchInvoice = (invoice, flagOverbilling) => {
+    // Link invoice to PO and update totals
+    const message = flagOverbilling
+      ? `Linked invoice ${invoice.invoiceNumber} with over-billing flag`
+      : `Linked invoice ${invoice.invoiceNumber} to PO-${String(po.id).padStart(4, '0')}`;
+
+    // Pass invoice data to update the master table
+    onAction?.('match-invoice', message, {
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      invoiceAmount: invoice.amount,
+      flagOverbilling,
+    });
+  };
+
+  const handleFlagInvoice = (invoice, flag) => {
+    const message = flag
+      ? `Flagged invoice ${invoice.number} for over-billing`
+      : `Cleared over-billing flag on invoice ${invoice.number}`;
+    onAction?.('flag-invoice', message);
+  };
+
+  const handleSendToBillPay = (invoice) => {
+    onAction?.('send-to-billpay', `Sent invoice ${invoice.number} to Bill Pay`);
+  };
+
+  const handleRemoveInvoice = (invoice) => {
+    onAction?.('remove-invoice', `Removed invoice ${invoice.number} from PO`, {
+      invoiceId: invoice.id,
+      invoiceAmount: invoice.amount,
+    });
+    setShowMatchModal(false);
+  };
+
   if (!po) return null;
 
   const remaining = po.totalAmount - (po.billedAmount || 0);
+  const derivedStatus = derivePOStatus(po);
 
   return (
     <>
@@ -509,7 +997,7 @@ export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
                 </button>
               )}
               <button
-                onClick={() => handleAction('reject', `Closed PO — ${po.name}`)}
+                onClick={() => handleAction('close-po', `Closed PO — ${po.name}`)}
                 className="text-xs border border-stone-200 rounded-md px-2.5 py-1 hover:bg-stone-50 text-red-600 font-medium flex items-center gap-1"
               >
                 <Lock size={12} /> Close PO
@@ -521,9 +1009,11 @@ export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
           </div>
 
           {/* PO number + status */}
-          <div className="text-lg font-semibold text-stone-900 tracking-tight">{po.name}</div>
+          <div className="text-lg font-semibold text-stone-900 tracking-tight">
+            PO-{String(po.id).padStart(4, '0')} — {po.supplier || getDisplayName(po)}
+          </div>
           <div className="flex items-center gap-2 mt-1.5">
-            <StatusBadge status={po.poStatus} />
+            <StatusBadge status={derivedStatus} />
             <span className="text-sm text-stone-500">·</span>
             <span className="text-sm text-stone-900 font-medium">{fmt(po.totalAmount)}</span>
             <span className="text-sm text-stone-500">committed</span>
@@ -560,19 +1050,66 @@ export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
 
         {/* ─── Scrollable content ─── */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {isEditing && activeTab === 'Overview' ? (
+          {isEditing ? (
             <div>
               <SectionTitle>Edit Purchase Order</SectionTitle>
+
+              {/* Basic Info */}
+              <EditableFieldCard label="PO Name" value={edits.name} onChange={v => handleEditField('name', v)} />
               <EditableFieldCard label="Supplier" value={edits.supplier} onChange={v => handleEditField('supplier', v)} />
+              <EditableFieldCard label="PO Amount" value={edits.totalAmount} onChange={v => handleEditField('totalAmount', v)} type="number" />
               <EditableFieldCard label="Category / Trade" value={edits.category} onChange={v => handleEditField('category', v)} />
               <EditableFieldCard label="Payment Method" value={edits.paymentMethod} onChange={v => handleEditField('paymentMethod', v)} />
               <EditableFieldCard label="Term" value={edits.term} onChange={v => handleEditField('term', v)} />
+
+              <Divider />
+
+              {/* Project Context */}
+              <SectionTitle>Project Context</SectionTitle>
+              <EditableFieldCard
+                label="Project"
+                value={edits.projectId}
+                onChange={v => {
+                  handleEditField('projectId', v);
+                  const proj = projects.find(p => p.id === parseInt(v));
+                  if (proj) handleEditField('project', proj.name);
+                }}
+                options={projects.map(p => ({ value: String(p.id), label: `${p.name} (${p.code})` }))}
+              />
+              <EditableFieldCard
+                label="Cost Code"
+                value={edits.costCode}
+                onChange={v => handleEditField('costCode', v)}
+                options={costCodes.map(c => ({ value: c.code, label: `${c.code} — ${c.name}` }))}
+              />
+              <EditableFieldCard label="Job Phase" value={edits.jobPhase} onChange={v => handleEditField('jobPhase', v)} />
+              <EditableFieldCard label="Trade" value={edits.trade} onChange={v => handleEditField('trade', v)} />
+
+              <Divider />
+
+              {/* Description */}
+              <SectionTitle>Description</SectionTitle>
+              <textarea
+                value={edits.description}
+                onChange={e => handleEditField('description', e.target.value)}
+                rows={4}
+                placeholder="Enter PO description..."
+                className="w-full bg-stone-50 border border-stone-200 rounded-lg px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none"
+              />
             </div>
           ) : (
             <>
               {activeTab === 'Overview' && <OverviewTab po={po} />}
               {activeTab === 'Commitments' && <CommitmentsTab po={po} />}
-              {activeTab === 'Invoices' && <InvoicesTab po={po} />}
+              {activeTab === 'Invoices' && (
+                <InvoicesTab
+                  po={po}
+                  onOpenMatchModal={() => setShowMatchModal(true)}
+                  onFlagInvoice={handleFlagInvoice}
+                  onSendToBillPay={handleSendToBillPay}
+                  onRemoveInvoice={handleRemoveInvoice}
+                />
+              )}
               {activeTab === 'Accounting' && <AccountingTab po={po} />}
               {activeTab === 'Activity' && <ActivityTab po={po} />}
             </>
@@ -580,7 +1117,7 @@ export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
         </div>
 
         {/* ─── Footer ─── */}
-        <div className="border-t border-stone-200 px-6 py-3 bg-white flex items-center justify-center gap-3 shrink-0">
+        <div className="border-t border-stone-200 px-6 py-3 bg-white shrink-0">
           {(isEditing || isDirty) ? (
             <div className="flex items-center justify-between w-full">
               <span className="text-xs text-stone-500">You have unsaved changes</span>
@@ -595,42 +1132,200 @@ export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
             </div>
           ) : (
             <>
-              {po.poStatus === 'Not billed' && (
-                <button
-                  onClick={() => handleAction('approve', `Matched invoice to ${po.name}`)}
-                  className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
-                >
-                  <Receipt size={14} /> Match invoice
-                </button>
+              {/* DRAFT */}
+              {derivedStatus === 'Draft' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => handleAction('issue-po', `Issued ${po.name}`)}
+                      className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                    >
+                      <Send size={14} /> Issue PO
+                    </button>
+                    <button
+                      onClick={() => handleAction('edit-po', `Editing ${po.name}`)}
+                      className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
+                    >
+                      <Edit3 size={14} /> Edit
+                    </button>
+                    <button
+                      onClick={() => handleAction('cancel-po', `Cancelled ${po.name}`)}
+                      className="flex items-center gap-2 text-sm text-red-600 border border-red-200 rounded-lg px-4 py-2.5 hover:bg-red-50 font-medium"
+                    >
+                      <Ban size={14} /> Cancel
+                    </button>
+                  </div>
+                  <div className="text-xs text-stone-500 text-center">
+                    💡 Issue this PO to formally commit spend with the vendor.
+                  </div>
+                </div>
               )}
-              {(po.poStatus === 'Partially invoiced' || po.poStatus === 'Partially billed') && (
-                <>
-                  <button
-                    onClick={() => handleAction('approve', `Matched invoice to ${po.name}`)}
-                    className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
-                  >
-                    <Receipt size={14} /> Match invoice
-                  </button>
-                  <button
-                    onClick={() => handleAction('flag', `Flagged ${po.name} for review`)}
-                    className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
-                  >
-                    <Flag size={14} /> Flag for review
-                  </button>
-                </>
+
+              {/* ISSUED */}
+              {derivedStatus === 'Issued' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => setShowMatchModal(true)}
+                      className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                    >
+                      <Receipt size={14} /> Link invoice
+                    </button>
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
+                    >
+                      <Edit3 size={14} /> Amend PO
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => handleAction('cancel-po', `Cancelled ${po.name}`)}
+                      className="flex items-center gap-1.5 text-xs text-stone-600 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50"
+                    >
+                      <Ban size={12} /> Cancel PO
+                    </button>
+                    <button
+                      onClick={() => handleAction('download-po-pdf', `Downloaded PO PDF for ${po.name}`)}
+                      className="flex items-center gap-1.5 text-xs text-stone-600 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50"
+                    >
+                      <Download size={12} /> Download PO PDF
+                    </button>
+                  </div>
+                  <div className="text-xs text-stone-500 text-center">
+                    💡 Awaiting invoice from vendor. Link invoices as they are received.
+                  </div>
+                </div>
               )}
-              {(po.poStatus === 'Fully billed' || po.poStatus === 'Closed') && (
-                <button
-                  onClick={() => handleAction('approve', `Viewing ${po.name} in Bill Pay`)}
-                  className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
-                >
-                  <ExternalLink size={14} /> View in Bill Pay
-                </button>
+
+              {/* PARTIALLY INVOICED */}
+              {derivedStatus === 'Partially invoiced' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => setShowMatchModal(true)}
+                      className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                    >
+                      <Receipt size={14} /> Link invoice
+                    </button>
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
+                    >
+                      <Edit3 size={14} /> Amend PO
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => handleAction('close-po', `Closed ${po.name}`)}
+                      className="flex items-center gap-1.5 text-xs text-stone-600 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50"
+                    >
+                      <Lock size={12} /> Close PO
+                    </button>
+                    <button
+                      onClick={() => handleAction('download-po-pdf', `Downloaded PO PDF for ${po.name}`)}
+                      className="flex items-center gap-1.5 text-xs text-stone-600 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50"
+                    >
+                      <Download size={12} /> Download PO PDF
+                    </button>
+                  </div>
+                  <div className="text-xs text-stone-500 text-center">
+                    💡 Additional invoices can be linked until the PO is fully invoiced.
+                  </div>
+                </div>
+              )}
+
+              {/* FULLY INVOICED */}
+              {derivedStatus === 'Fully invoiced' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => handleAction('close-po', `Closed ${po.name}`)}
+                      className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                    >
+                      <Lock size={14} /> Close PO
+                    </button>
+                    <button
+                      onClick={() => setShowViewInvoicesModal(true)}
+                      className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
+                    >
+                      <Eye size={14} /> View linked invoices
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-center">
+                    <button
+                      onClick={() => handleAction('download-po-pdf', `Downloaded PO PDF for ${po.name}`)}
+                      className="flex items-center gap-1.5 text-xs text-stone-600 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50"
+                    >
+                      <Download size={12} /> Download PO PDF
+                    </button>
+                  </div>
+                  <div className="text-xs text-stone-500 text-center">
+                    💡 This PO has been fully invoiced. Close it when no further changes are expected.
+                  </div>
+                </div>
+              )}
+
+              {/* CLOSED */}
+              {derivedStatus === 'Closed' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => setShowViewInvoicesModal(true)}
+                      className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                    >
+                      <Eye size={14} /> View invoices
+                    </button>
+                    <button
+                      onClick={() => handleAction('download-po-pdf', `Downloaded PO PDF for ${po.name}`)}
+                      className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
+                    >
+                      <Download size={14} /> Download PO PDF
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-center">
+                    <button
+                      onClick={() => handleAction('reopen-po', `Reopened ${po.name}`)}
+                      className="flex items-center gap-1.5 text-xs text-stone-600 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50"
+                    >
+                      <ArrowUpRight size={12} /> Reopen (admin only)
+                    </button>
+                  </div>
+                  <div className="text-xs text-stone-500 text-center">
+                    💡 This PO is closed and no further spend is allowed.
+                  </div>
+                </div>
+              )}
+
+              {/* CANCELLED */}
+              {derivedStatus === 'Cancelled' && (
+                <div className="flex flex-col gap-3">
+                  <div className="text-sm text-stone-600 text-center py-2">
+                    This PO has been cancelled. No actions available.
+                  </div>
+                </div>
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* Match Invoice Modal */}
+      {showMatchModal && (
+        <MatchInvoiceModal
+          po={po}
+          onClose={() => setShowMatchModal(false)}
+          onMatch={handleMatchInvoice}
+        />
+      )}
+
+      {/* View Invoices Modal */}
+      {showViewInvoicesModal && (
+        <ViewInvoicesModal
+          po={po}
+          onClose={() => setShowViewInvoicesModal(false)}
+        />
+      )}
 
       <style>{`
         @keyframes drawerSlideIn {

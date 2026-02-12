@@ -5,10 +5,11 @@ import {
   HardHat, Lock, Flag, MessageSquare,
   Zap, Trash2, GripVertical, Plus, Search,
   Users, Briefcase, DollarSign, ShieldCheck, Settings,
-  User, FileText, CreditCard, Send,
+  User, FileText, CreditCard, Send, Download,
 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import { projects, costCodes, approverDirectory } from '../data/mockData';
+import { isPurchaseRequest, isPurchaseOrder, getDisplayId, getDisplayName } from '../utils/procurementTypeGuards';
 
 /* ─── Helpers ─── */
 function fmt(n) {
@@ -83,6 +84,72 @@ const groupIcons = {
   'purchasing': ShieldCheck,
   'admin': Settings,
 };
+
+/* ═══════════════════════════════════════════════
+   Request Changes Modal (with note)
+   ═══════════════════════════════════════════════ */
+function RequestChangesModal({ onClose, onSubmit }) {
+  const [note, setNote] = useState('');
+
+  const handleSubmit = () => {
+    if (!note.trim()) return;
+    onSubmit(note);
+    onClose();
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-50" onClick={onClose} />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-2xl border border-stone-200 z-50 w-[480px] flex flex-col">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-stone-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-stone-900">Request Changes</h2>
+            <button onClick={onClose} className="p-1 rounded-lg hover:bg-stone-100 text-stone-400">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-sm text-stone-500 mt-1">
+            Provide specific feedback for the requester
+          </p>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-4">
+          <label className="block text-sm font-medium text-stone-700 mb-2">
+            What changes are needed?
+          </label>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g., Please update the cost code to 03-000 and reduce the amount to $15,000..."
+            className="w-full px-3 py-2 border border-stone-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-stone-300"
+            rows={6}
+            autoFocus
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-stone-200 px-6 py-3 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="text-sm px-4 py-2 border border-stone-200 rounded-lg hover:bg-stone-50 text-stone-700 font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!note.trim()}
+            className="text-sm px-4 py-2 bg-stone-900 text-white rounded-lg hover:bg-stone-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          >
+            <Edit3 size={14} />
+            Request Changes
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 /* ═══════════════════════════════════════════════
    Approver Selector Dropdown
@@ -197,12 +264,12 @@ function ApproverSelectorDropdown({ request, onSelect, onClose }) {
 function ApprovalStepper({ approvers, onRemove }) {
   const statusIcon = (status) => {
     if (status === 'Approved') return <Check size={12} className="text-emerald-600" />;
-    if (status === 'Pending') return <Clock size={12} className="text-amber-600" />;
+    if (status === 'For approval') return <Clock size={12} className="text-amber-600" />;
     return <Clock size={12} className="text-stone-400" />;
   };
   const statusLabel = (status) => {
     if (status === 'Approved') return 'text-emerald-600';
-    if (status === 'Pending') return 'text-amber-600';
+    if (status === 'For approval') return 'text-amber-600';
     return 'text-stone-400';
   };
 
@@ -214,7 +281,7 @@ function ApprovalStepper({ approvers, onRemove }) {
           <div className="flex items-start gap-3 py-2.5">
             <div className={`w-[38px] h-[38px] rounded-full flex items-center justify-center text-xs font-bold shrink-0 z-10 ${
               a.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' :
-              a.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
+              a.status === 'For approval' ? 'bg-amber-100 text-amber-700' :
               'bg-stone-100 text-stone-500'
             }`}>{i + 1}</div>
             <div className="flex-1 min-w-0">
@@ -490,7 +557,27 @@ function ActivityTab({ request }) {
 const TABS = ['Overview', 'Job Context', 'Approvals', 'Activity'];
 
 /* ─── Editable Field for Draft mode ─── */
-function EditableField({ label, value, onChange, type = 'text' }) {
+function EditableField({ label, value, onChange, type = 'text', options = null }) {
+  if (options) {
+    return (
+      <div className="bg-stone-50 rounded-lg px-4 py-3 mb-2 border border-stone-200">
+        <div className="text-xs text-stone-500 mb-1">{label}</div>
+        <select
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="w-full text-sm text-stone-800 bg-transparent border-none outline-none focus:ring-0 p-0"
+        >
+          <option value="">Select...</option>
+          {options.map(opt => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-stone-50 rounded-lg px-4 py-3 mb-2 border border-stone-200">
       <div className="text-xs text-stone-500 mb-1">{label}</div>
@@ -507,16 +594,34 @@ function EditableField({ label, value, onChange, type = 'text' }) {
 export default function RequestDrawer({ request, onClose, onAction }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [approvers, setApprovers] = useState(request?.approverChain || []);
-  const [isEditing, setIsEditing] = useState(false);
+  // Auto-enable editing when status is "Changes Requested"
+  const [isEditing, setIsEditing] = useState(request?.status === 'Changes Requested');
+  const [showChangesModal, setShowChangesModal] = useState(false);
 
-  // Editable draft fields
+  // Update editing state when request status changes (for reopened requests)
+  useEffect(() => {
+    if (request?.status === 'Changes Requested') {
+      setIsEditing(true);
+    }
+  }, [request?.status]);
+
+  // Editable draft fields - ALL fields
   const [edits, setEdits] = useState({
     name: request?.name || '',
+    project: request?.project || '',
+    projectId: request?.projectId || '',
+    costCode: request?.costCode || '',
+    jobPhase: request?.jobPhase || '',
     category: request?.category || '',
     estimatedAmount: request?.estimatedAmount?.toString() || '',
+    frequency: request?.frequency || '',
+    type: request?.type || '',
+    trade: request?.trade || '',
     supplier: request?.supplier || '',
     description: request?.description || '',
     neededBy: request?.neededBy || '',
+    paymentMethod: request?.paymentMethod || '',
+    spendProgram: request?.spendProgram || '',
   });
   const [savedEdits, setSavedEdits] = useState({ ...edits });
 
@@ -526,10 +631,30 @@ export default function RequestDrawer({ request, onClose, onAction }) {
     setEdits(prev => ({ ...prev, [key]: value }));
   };
 
+  // Prepare edits for saving - convert types as needed
+  const prepareEditsForSave = () => {
+    return {
+      ...edits,
+      estimatedAmount: edits.estimatedAmount ? parseFloat(edits.estimatedAmount) : 0,
+      projectId: edits.projectId ? parseInt(edits.projectId) : undefined,
+    };
+  };
+
   const handleSave = () => {
     setSavedEdits({ ...edits });
     setIsEditing(false);
-    onAction?.('approve', `Saved changes to ${request.name}`);
+    // When saving from "Changes Requested", set to Draft
+    if (request.status === 'Changes Requested') {
+      onAction?.('save-as-draft', `Saved changes to ${request.name}`, { edits: prepareEditsForSave() });
+    } else {
+      onAction?.('save', `Saved changes to ${request.name}`, { edits: prepareEditsForSave() });
+    }
+  };
+
+  const handleSubmitForApproval = () => {
+    setSavedEdits({ ...edits });
+    setIsEditing(false);
+    onAction?.('submit', `Submitted ${request.name} for approval`, { edits: prepareEditsForSave() });
   };
 
   const handleDiscard = () => {
@@ -539,6 +664,10 @@ export default function RequestDrawer({ request, onClose, onAction }) {
 
   const handleAction = (type, message) => {
     onAction?.(type, message);
+  };
+
+  const handleRequestChanges = (note) => {
+    onAction?.('request-changes', `Requested changes on ${request.name}`, { note });
   };
 
   if (!request) return null;
@@ -557,7 +686,7 @@ export default function RequestDrawer({ request, onClose, onAction }) {
               <ArrowLeft size={15} /> Back
             </button>
             <div className="flex items-center gap-2">
-              {request.status === 'Draft' && !isEditing && (
+              {(request.status === 'Draft' || request.status === 'Changes Requested') && !isEditing && (
                 <button
                   onClick={() => setIsEditing(true)}
                   className="text-xs border border-stone-200 rounded-md px-2.5 py-1 hover:bg-stone-50 text-stone-600 font-medium flex items-center gap-1"
@@ -578,12 +707,32 @@ export default function RequestDrawer({ request, onClose, onAction }) {
           </div>
 
           {/* Request name + status */}
-          <div className="text-lg font-semibold text-stone-900 tracking-tight">{request.name}</div>
+          <div className="text-lg font-semibold text-stone-900 tracking-tight">
+            {getDisplayId(request)} — {getDisplayName(request)}
+          </div>
           <div className="flex items-center gap-2 mt-1.5">
             <StatusBadge status={request.status} />
             <span className="text-sm text-stone-500">·</span>
             <span className="text-sm text-stone-900 font-medium">{fmt(request.estimatedAmount)}</span>
           </div>
+
+          {/* Requested Changes Banner */}
+          {request.requestedChanges && (
+            <div className="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-amber-900 mb-1">Changes Requested</div>
+                  <div className="text-sm text-amber-800 mb-2">{request.requestedChanges.note}</div>
+                  <div className="flex items-center gap-2 text-xs text-amber-600">
+                    <span>{request.requestedChanges.by}</span>
+                    <span>·</span>
+                    <span>{fmtShort(request.requestedChanges.timestamp)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Requester + project */}
           <div className="flex items-center gap-3 mt-3">
@@ -620,20 +769,124 @@ export default function RequestDrawer({ request, onClose, onAction }) {
 
         {/* ─── Scrollable content ─── */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {isEditing && activeTab === 'Overview' ? (
+          {isEditing ? (
             <div>
               <SectionTitle>Edit Request</SectionTitle>
-              <EditableField label="Request Name" value={edits.name} onChange={v => handleEdit('name', v)} />
-              <EditableField label="Spend Category / Trade" value={edits.category} onChange={v => handleEdit('category', v)} />
-              <EditableField label="Estimated Amount" value={edits.estimatedAmount} onChange={v => handleEdit('estimatedAmount', v)} type="number" />
-              <EditableField label="Supplier" value={edits.supplier} onChange={v => handleEdit('supplier', v)} />
-              <EditableField label="Needed-by Date" value={edits.neededBy} onChange={v => handleEdit('neededBy', v)} type="date" />
+
+              {/* Basic Info */}
+              <EditableField
+                label="Request Name"
+                value={edits.name}
+                onChange={v => handleEdit('name', v)}
+              />
+              <EditableField
+                label="Spend Category / Trade"
+                value={edits.category}
+                onChange={v => handleEdit('category', v)}
+              />
+              <EditableField
+                label="Estimated Amount"
+                value={edits.estimatedAmount}
+                onChange={v => handleEdit('estimatedAmount', v)}
+                type="number"
+              />
+              <EditableField
+                label="Frequency"
+                value={edits.frequency}
+                onChange={v => handleEdit('frequency', v)}
+                options={[
+                  { value: 'One-time', label: 'One-time' },
+                  { value: 'Monthly', label: 'Monthly' },
+                  { value: 'Quarterly', label: 'Quarterly' },
+                  { value: 'Annual', label: 'Annual' },
+                ]}
+              />
+              <EditableField
+                label="Type"
+                value={edits.type}
+                onChange={v => handleEdit('type', v)}
+                options={[
+                  { value: 'material', label: 'Material' },
+                  { value: 'labor', label: 'Labor' },
+                  { value: 'rental', label: 'Rental' },
+                  { value: 'subcontractor', label: 'Subcontractor' },
+                  { value: 'service', label: 'Service' },
+                ]}
+              />
+              <EditableField
+                label="Supplier"
+                value={edits.supplier}
+                onChange={v => handleEdit('supplier', v)}
+              />
+              <EditableField
+                label="Trade"
+                value={edits.trade}
+                onChange={v => handleEdit('trade', v)}
+              />
+              <EditableField
+                label="Needed-by Date"
+                value={edits.neededBy}
+                onChange={v => handleEdit('neededBy', v)}
+                type="date"
+              />
+
               <Divider />
+
+              {/* Job Context */}
+              <SectionTitle>Job Context</SectionTitle>
+              <EditableField
+                label="Project"
+                value={edits.projectId}
+                onChange={v => {
+                  handleEdit('projectId', v);
+                  const proj = projects.find(p => p.id === parseInt(v));
+                  if (proj) handleEdit('project', proj.name);
+                }}
+                options={projects.map(p => ({ value: String(p.id), label: `${p.name} (${p.code})` }))}
+              />
+              <EditableField
+                label="Cost Code"
+                value={edits.costCode}
+                onChange={v => handleEdit('costCode', v)}
+                options={costCodes.map(c => ({ value: c.code, label: `${c.code} — ${c.name}` }))}
+              />
+              <EditableField
+                label="Job Phase"
+                value={edits.jobPhase}
+                onChange={v => handleEdit('jobPhase', v)}
+              />
+
+              <Divider />
+
+              {/* Financial Details */}
+              <SectionTitle>Financial Details</SectionTitle>
+              <EditableField
+                label="Payment Method"
+                value={edits.paymentMethod}
+                onChange={v => handleEdit('paymentMethod', v)}
+                options={[
+                  { value: 'Purchase Order', label: 'Purchase Order' },
+                  { value: 'Virtual Card', label: 'Virtual Card' },
+                  { value: 'Physical Card', label: 'Physical Card' },
+                  { value: 'ACH', label: 'ACH' },
+                  { value: 'Check', label: 'Check' },
+                ]}
+              />
+              <EditableField
+                label="Spend Program"
+                value={edits.spendProgram}
+                onChange={v => handleEdit('spendProgram', v)}
+              />
+
+              <Divider />
+
+              {/* Description */}
               <SectionTitle>Description / Job Note</SectionTitle>
               <textarea
                 value={edits.description}
                 onChange={e => handleEdit('description', e.target.value)}
                 rows={4}
+                placeholder="Enter description or job note..."
                 className="w-full bg-stone-50 border border-stone-200 rounded-lg px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none"
               />
             </div>
@@ -657,22 +910,34 @@ export default function RequestDrawer({ request, onClose, onAction }) {
                 <button onClick={handleDiscard} className="text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
                   Discard
                 </button>
-                <button onClick={handleSave} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-5 py-2 hover:bg-stone-800 font-medium">
-                  <Check size={13} /> Save changes
-                </button>
+                {/* Show both Save and Submit when editing from Changes Requested */}
+                {request.status === 'Changes Requested' ? (
+                  <>
+                    <button onClick={handleSave} className="flex items-center gap-1.5 text-sm border border-stone-200 text-stone-700 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
+                      <Check size={13} /> Save as draft
+                    </button>
+                    <button onClick={handleSubmitForApproval} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-5 py-2 hover:bg-stone-800 font-medium">
+                      <Send size={13} /> Submit for approval
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={handleSave} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-5 py-2 hover:bg-stone-800 font-medium">
+                    <Check size={13} /> Save changes
+                  </button>
+                )}
               </div>
             </div>
           ) : (
             <>
               {request.status === 'Draft' && (
                 <button
-                  onClick={() => handleAction('approve', `Submitted ${request.name} for approval`)}
+                  onClick={() => handleAction('submit', `Submitted ${request.name} for approval`)}
                   className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
                 >
                   <Send size={14} /> Submit for approval
                 </button>
               )}
-              {request.status === 'Pending' && (
+              {request.status === 'For approval' && (
                 <>
                   <button
                     onClick={() => handleAction('approve', `Approved request — ${request.name}`)}
@@ -681,7 +946,7 @@ export default function RequestDrawer({ request, onClose, onAction }) {
                     <Check size={14} /> Approve
                   </button>
                   <button
-                    onClick={() => handleAction('flag', `Requested changes on ${request.name}`)}
+                    onClick={() => setShowChangesModal(true)}
                     className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
                   >
                     <Edit3 size={14} /> Request changes
@@ -694,26 +959,86 @@ export default function RequestDrawer({ request, onClose, onAction }) {
                   </button>
                 </>
               )}
-              {request.status === 'Approved' && (
-                <>
+              {request.status === 'Approved' && isPurchaseRequest(request) && (
+                <div className="w-full flex flex-col gap-3">
+                  {/* Primary actions */}
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => handleAction('convert-to-po', `Converted ${request.name} to Purchase Order`)}
+                      className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                    >
+                      <FileText size={14} /> Convert to PO
+                    </button>
+                    <button
+                      onClick={() => handleAction('issue-card', `Issued virtual card for ${request.name}`)}
+                      className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
+                    >
+                      <CreditCard size={14} /> Issue virtual card
+                    </button>
+                  </div>
+                  {/* Download approval summary - secondary action */}
+                  <div className="border-t border-stone-100 pt-3">
+                    <button
+                      onClick={() => handleAction('download-approval-summary', `Downloaded approval summary for ${request.name}`)}
+                      className="w-full flex items-center justify-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium"
+                    >
+                      <Download size={14} /> Download approval summary
+                    </button>
+                  </div>
+                </div>
+              )}
+              {request.status === 'Converted' && isPurchaseRequest(request) && (
+                <div className="w-full flex flex-col gap-2">
                   <button
-                    onClick={() => handleAction('approve', `Converted ${request.name} to Purchase Order`)}
-                    className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                    onClick={() => handleAction('view-po', `Viewing Purchase Order for ${request.name}`)}
+                    className="flex items-center justify-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
                   >
-                    <FileText size={14} /> Convert to PO
+                    <FileText size={14} /> View Purchase Order
                   </button>
                   <button
-                    onClick={() => handleAction('approve', `Issued virtual card for ${request.name}`)}
-                    className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
+                    onClick={() => handleAction('download-po', `Downloaded PO PDF for ${request.name}`)}
+                    className="flex items-center justify-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium"
                   >
-                    <CreditCard size={14} /> Issue virtual card
+                    <Download size={14} /> Download PO PDF
                   </button>
-                </>
+                </div>
+              )}
+              {request.status === 'Card Issued' && isPurchaseRequest(request) && (
+                <div className="w-full flex flex-col gap-2">
+                  <button
+                    onClick={() => handleAction('view-card', `Viewing card details for ${request.name}`)}
+                    className="flex items-center justify-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                  >
+                    <CreditCard size={14} /> View card details
+                  </button>
+                  <button
+                    onClick={() => handleAction('download-receipt', `Downloaded receipt for ${request.name}`)}
+                    className="flex items-center justify-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium"
+                  >
+                    <Download size={14} /> Download receipt & transaction record
+                  </button>
+                </div>
+              )}
+              {request.status === 'Rejected' && (
+                <button
+                  onClick={() => handleAction('reopen', `Reopened ${request.name} as draft`)}
+                  className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
+                >
+                  <Edit3 size={14} /> Reopen request
+                </button>
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* Request Changes Modal */}
+      {showChangesModal && (
+        <RequestChangesModal
+          onClose={() => setShowChangesModal(false)}
+          onSubmit={handleRequestChanges}
+        />
+      )}
 
       <style>{`
         @keyframes drawerSlideIn {

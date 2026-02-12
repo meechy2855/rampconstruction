@@ -1,9 +1,11 @@
 const statusStyles = {
-  'Pending':           'bg-amber-50 text-amber-700 border border-amber-200',
+  'Pending':           'bg-amber-50 text-amber-700 border border-amber-200', // Backward compatibility
   'Pending Review':    'bg-amber-50 text-amber-700 border border-amber-200',
   'For Approval':      'bg-blue-50 text-blue-700 border border-blue-200',
-  'Approved':          'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  'Scheduled':         'bg-indigo-50 text-indigo-700 border border-indigo-200',
+  'For approval':      'bg-blue-50 text-blue-700 border border-blue-200', // Procurement request status
+  'For Payment':       'bg-indigo-50 text-indigo-700 border border-indigo-200',
+  'Payment Scheduled': 'bg-blue-50 text-blue-700 border border-blue-200',
+  'Approved':          'bg-green-50 text-green-700 border border-green-200',
   'Paid':              'bg-emerald-50 text-emerald-700 border border-emerald-200',
   'Late':              'bg-red-50 text-red-700 border border-red-200',
   'Overdue':           'bg-red-50 text-red-700 border border-red-200',
@@ -29,6 +31,12 @@ const statusStyles = {
   'Needs review':      'bg-amber-50 text-amber-700 border border-amber-200',
   'Structural Steel':  'bg-gray-100 text-gray-700 border border-gray-200',
   'Mechanical':        'bg-gray-100 text-gray-700 border border-gray-200',
+  'Rejected':          'bg-red-50 text-red-700 border border-red-200',
+  'Changes Requested': 'bg-orange-50 text-orange-700 border border-orange-200',
+  'Converted':         'bg-indigo-50 text-indigo-700 border border-indigo-200',
+  'Card Issued':       'bg-violet-50 text-violet-700 border border-violet-200',
+  'Flagged':           'bg-amber-50 text-amber-700 border border-amber-200',
+  'Missing Lien Waiver': 'bg-orange-50 text-orange-700 border border-orange-200',
   // Procurement-specific statuses
   'Partially invoiced': 'bg-amber-50 text-amber-700 border border-amber-200',
   'Closed':            'bg-gray-100 text-gray-500 border border-gray-200',
