@@ -159,10 +159,10 @@ export const cardTransactions = [
   },
   {
     id: 8, date: '2024-05-24', amount: 5800.00, supplier: 'BlueLine Equipment',
-    project: 'Harbor Bridge Repair', projectId: 4, projectCode: '189.200', costCode: '05-000',
+    project: '', projectId: null, projectCode: '', costCode: '',
     spendType: 'Equipment Rental', trade: 'Structural Steel', cardholder: 'David Wallace', role: 'Project Manager',
     receiptStatus: 'Attached', memo: 'Crane rental — 2 day',
-    policyStatus: 'Over Limit', approvalStatus: 'Needs Review',
+    policyStatus: 'OK', approvalStatus: 'Needs Review',
   },
 ];
 
