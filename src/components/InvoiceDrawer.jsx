@@ -1117,8 +1117,8 @@ function DrawerFooter({ bill, activeTab, onAction, isDirty, onSave, onOpenUpload
         <button onClick={() => onAction('submit-for-approval', `Submitted ${bill.invoiceNumber} for approval`)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-4 py-2 hover:bg-stone-800 font-medium">
           <Send size={13} /> Submit for approval
         </button>
-        <button onClick={() => onAction('flag', `Saved draft — ${bill.invoiceNumber}`)} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
-          <FileText size={13} /> Save draft
+        <button onClick={onSave} className="flex items-center gap-1.5 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
+          <Save size={13} /> Save draft
         </button>
       </div>
     );
@@ -1191,7 +1191,7 @@ function DrawerFooter({ bill, activeTab, onAction, isDirty, onSave, onOpenUpload
           onClick={onSave}
           className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-4 py-2 hover:bg-stone-800 font-medium"
         >
-          <Save size={13} /> Save Changes
+          <Send size={13} /> Save & Submit for Approval
         </button>
       </div>
     );
@@ -1346,8 +1346,12 @@ export default function InvoiceDrawer({ bill, onClose, onAction, initialTab, pag
       setSchedulePaymentModal({ open: true });
       return;
     }
+    if (type === 'submit-for-approval') {
+      onAction?.(type, message, edits);
+      return;
+    }
     onAction?.(type, message);
-  }, [onAction, bill]);
+  }, [onAction, bill, edits]);
 
   // Upload modal
   const openUpload = useCallback((title, uploadType = '') => {
@@ -1377,7 +1381,7 @@ export default function InvoiceDrawer({ bill, onClose, onAction, initialTab, pag
   }, []);
 
   const handleRequestChangesSubmit = useCallback((comments) => {
-    onAction?.('request-changes', `Requested changes on ${bill?.invoiceNumber}: ${comments}`);
+    onAction?.('request-changes', `Requested changes on ${bill?.invoiceNumber}`, { comments });
   }, [bill, onAction]);
 
   // Lien waiver warning modal handlers

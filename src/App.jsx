@@ -25,7 +25,7 @@ export default function App() {
   return (
     <Layout selectedProject={selectedProject} onProjectChange={setSelectedProject}>
       <Routes>
-        <Route path="/" element={<Navigate to="/bill-pay" replace />} />
+        <Route path="/" element={<Navigate to="/inbox" replace />} />
         <Route path="/bill-pay" element={<BillPay selectedProject={selectedProject} />} />
         <Route path="/expenses" element={<ConstructionCard selectedProject={selectedProject} />} />
         <Route path="/expenses/card-transactions" element={<ConstructionCard selectedProject={selectedProject} />} />

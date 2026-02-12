@@ -4,10 +4,11 @@ import {
   MapPin, Calendar, Shield, Edit3, ChevronRight, Ban,
   CreditCard, User, HardHat, ArrowUpRight, Lock, Flag, MessageSquare,
   Camera, ExternalLink, Zap, Trash2, GripVertical, Plus, Receipt, FileText,
+  RotateCcw,
 } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import { projects } from '../data/mockData';
-import { deriveCardTransactionStatus, getTransactionBlockers } from '../utils/cardTransactionStatus';
+import { deriveCardTransactionStatus, getTransactionBlockers, isReadyForReview } from '../utils/cardTransactionStatus';
 
 /* ─── Upload Receipt Modal ─── */
 function UploadReceiptModal({ onClose, onSave }) {
@@ -100,6 +101,92 @@ function UploadReceiptModal({ onClose, onSave }) {
         @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes modalSlideUp { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
       `}</style>
+    </div>
+  );
+}
+
+/* ─── Request Changes Modal ─── */
+function RequestChangesModal({ onClose, onSubmit }) {
+  const [changeType, setChangeType] = useState('RECEIPT');
+  const [reason, setReason] = useState('');
+
+  const typeOptions = [
+    { value: 'RECEIPT', label: 'Receipt issue', description: 'Receipt is missing or incorrect' },
+    { value: 'PROJECT_CODE', label: 'Project / cost code', description: 'Wrong or missing project or cost code' },
+    { value: 'OTHER', label: 'Other', description: 'Describe the issue below' },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/25 backdrop-blur-[2px]"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ animation: 'modalFadeIn 0.15s ease-out' }}
+    >
+      <div
+        className="w-full max-w-md mx-4 bg-white rounded-2xl shadow-2xl flex flex-col"
+        style={{ animation: 'modalSlideUp 0.2s ease-out' }}
+      >
+        <div className="px-6 pt-5 pb-4 border-b border-stone-200 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-stone-900">Request Changes</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-600">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <div className="text-sm font-medium text-stone-700 mb-2">What needs to change?</div>
+            <div className="space-y-2">
+              {typeOptions.map(opt => (
+                <label
+                  key={opt.value}
+                  className={`flex items-start gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
+                    changeType === opt.value
+                      ? 'border-stone-900 bg-stone-50'
+                      : 'border-stone-200 hover:border-stone-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="changeType"
+                    value={opt.value}
+                    checked={changeType === opt.value}
+                    onChange={() => setChangeType(opt.value)}
+                    className="mt-0.5 accent-stone-900"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-stone-800">{opt.label}</div>
+                    <div className="text-xs text-stone-500">{opt.description}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-sm font-medium text-stone-700 mb-1.5">Note (optional)</div>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Add context for the cardholder..."
+              rows={3}
+              className="w-full bg-stone-50 border border-stone-200 rounded-lg px-4 py-3 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-stone-200 px-6 py-3 flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2 hover:bg-stone-50 font-medium">
+            Cancel
+          </button>
+          <button
+            onClick={() => { onSubmit(changeType, reason); onClose(); }}
+            className="text-sm bg-stone-900 text-white rounded-lg px-4 py-2 hover:bg-stone-800 font-medium"
+          >
+            <span className="flex items-center gap-1.5"><RotateCcw size={13} /> Request changes</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -252,7 +339,7 @@ function OverviewContent({ t, onAction, edits, setEdits, isDirty, setIsDirty }) 
       <div className="mb-2">
         <div className="text-xs text-stone-500 mb-1">Transaction state</div>
         <div className="flex items-center gap-1.5">
-          {t.policyStatus === 'OK' && t.receiptStatus === 'Attached' ? (
+          {blockers.length === 0 ? (
             <><Check size={15} className="text-emerald-600" /><span className="text-sm font-medium text-emerald-700">Requirements complete</span></>
           ) : (
             <><Clock size={15} className="text-amber-600" /><span className="text-sm font-medium text-amber-700">Requirements incomplete</span></>
@@ -262,10 +349,13 @@ function OverviewContent({ t, onAction, edits, setEdits, isDirty, setIsDirty }) 
       <div className="mb-1">
         <div className="text-xs text-stone-500 mb-1">Review status</div>
         <div className="flex items-center gap-1.5">
-          <Clock size={15} className="text-stone-600" />
-          <span className="text-sm font-medium text-stone-800">
-            {t.approvalStatus === 'Approved' ? 'Approved' : 'Pending review'}
-          </span>
+          {deriveCardTransactionStatus(mergedTransaction) === 'Approved' || deriveCardTransactionStatus(mergedTransaction) === 'Exported' ? (
+            <><Check size={15} className="text-emerald-600" /><span className="text-sm font-medium text-emerald-700">Approved</span></>
+          ) : deriveCardTransactionStatus(mergedTransaction) === 'For Approval' ? (
+            <><Clock size={15} className="text-blue-600" /><span className="text-sm font-medium text-blue-700">Pending approval</span></>
+          ) : (
+            <><Clock size={15} className="text-stone-600" /><span className="text-sm font-medium text-stone-800">Pending review</span></>
+          )}
         </div>
       </div>
 
@@ -347,6 +437,8 @@ function OverviewContent({ t, onAction, edits, setEdits, isDirty, setIsDirty }) 
               setReceiptUploaded(true);
               setEdits(prev => ({ ...prev, receiptStatus: 'Attached' }));
               setIsDirty(true);
+              // Persist receipt immediately via silent save
+              onAction?.('save-silent', '', { receiptStatus: 'Attached' });
             }
           }}
         />
@@ -716,7 +808,10 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
   const derivedStatus = deriveCardTransactionStatus(mergedTransaction);
   const blockers = getTransactionBlockers(mergedTransaction);
 
-  const displayStatus = t.policyStatus !== 'OK' ? t.policyStatus : t.approvalStatus;
+  // Show request-changes modal
+  const [showRequestChanges, setShowRequestChanges] = useState(false);
+  // Track if user just saved (for Submit for Approval CTA)
+  const [justSaved, setJustSaved] = useState(false);
 
   function handleAction(type, message, extraData) {
     onAction?.(type, message, extraData);
@@ -732,13 +827,25 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
       receiptStatus: edits.receiptStatus,
     };
 
-    // If blockers resolved, set approvalStatus to pending
-    if (blockers.length === 0 && t.approvalStatus !== 'Approved') {
-      updatedFields.approvalStatus = 'Needs Review';
-    }
-
     handleAction('save', 'Changes saved successfully', updatedFields);
     setIsDirty(false);
+
+    // Check if blockers are now resolved after save
+    const savedTransaction = { ...t, ...updatedFields };
+    const savedBlockers = getTransactionBlockers(savedTransaction);
+    if (savedBlockers.length === 0 && savedTransaction.approvalStatus !== 'Approved' && savedTransaction.approvalStatus !== 'APPROVED') {
+      // Show "Submit for approval" CTA instead of closing
+      setJustSaved(true);
+    } else {
+      onClose();
+    }
+  }
+
+  function handleSubmitForApproval() {
+    handleAction('submit-for-approval', `Submitted for approval: ${t.supplier} — ${fmt(t.amount)}`, {
+      approvalStatus: 'PENDING',
+    });
+    setJustSaved(false);
     onClose();
   }
 
@@ -778,7 +885,7 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
           <div className="text-4xl font-semibold text-stone-900 tracking-tight">{fmt(t.amount)} USD</div>
           {/* Status + date */}
           <div className="flex items-center gap-2 mt-1.5 text-sm text-stone-500">
-            <StatusBadge status={displayStatus} />
+            <StatusBadge status={derivedStatus} />
             <span>·</span>
             <span>{fmtDate(t.date)} at 2:34 PM</span>
           </div>
@@ -813,7 +920,7 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
         {/* ─── Dynamic footer ─── */}
         <div className="border-t border-stone-200 px-6 py-3 bg-white flex items-center justify-center gap-3 shrink-0">
           {isDirty ? (
-            // Sticky Save Footer
+            // Sticky Save / Cancel footer when edits are pending
             <>
               <button
                 onClick={handleSave}
@@ -828,10 +935,26 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
                 Cancel
               </button>
             </>
+          ) : justSaved ? (
+            // After save, if all blockers resolved → show Submit for Approval CTA
+            <>
+              <button
+                onClick={handleSubmitForApproval}
+                className="flex items-center gap-2 text-sm bg-blue-600 text-white rounded-lg px-5 py-2.5 hover:bg-blue-700 font-medium"
+              >
+                <Send size={14} /> Submit for approval
+              </button>
+              <button
+                onClick={onClose}
+                className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
+              >
+                Close
+              </button>
+            </>
           ) : (
             // Action buttons based on derived status
             <>
-              {derivedStatus === 'Needs review' && (
+              {derivedStatus === 'For Approval' && (
                 <>
                   <button
                     onClick={() => handleAction('approve', `Transaction ${t.supplier} — ${fmt(t.amount)} approved`, { approvalStatus: 'Approved' })}
@@ -840,32 +963,36 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
                     <Check size={14} /> Approve
                   </button>
                   <button
-                    onClick={() => handleAction('flag', `Transaction ${t.supplier} flagged for review`)}
+                    onClick={() => handleAction('reject', `Transaction ${t.supplier} rejected`, { approvalStatus: 'Rejected' })}
                     className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
                   >
-                    <Flag size={14} /> Flag for review
+                    <Ban size={14} /> Reject
                   </button>
                   <button
-                    onClick={() => handleAction('reject', `Transaction ${t.supplier} disputed`, { approvalStatus: 'Disputed' })}
-                    className="flex items-center gap-2 text-sm text-red-600 border border-red-200 rounded-lg px-5 py-2.5 hover:bg-red-50 font-medium"
+                    onClick={() => setShowRequestChanges(true)}
+                    className="flex items-center gap-2 text-sm text-amber-700 border border-amber-200 rounded-lg px-5 py-2.5 hover:bg-amber-50 font-medium"
                   >
-                    <AlertTriangle size={14} /> Dispute
+                    <RotateCcw size={14} /> Request changes
                   </button>
                 </>
               )}
-              {(derivedStatus === 'Missing receipt' || derivedStatus === 'Missing project coding') && (
+              {derivedStatus === 'Missing Receipt' && (
                 <>
                   <button
-                    onClick={() => handleAction('flag', `Reminder sent to ${t.cardholder} for ${t.supplier} transaction`)}
+                    onClick={() => setActiveTab('Overview')}
                     className="flex items-center gap-2 text-sm bg-amber-600 text-white rounded-lg px-5 py-2.5 hover:bg-amber-700 font-medium"
                   >
-                    <Send size={14} /> Send reminder
+                    <Edit3 size={14} /> Edit — Upload receipt
                   </button>
+                </>
+              )}
+              {derivedStatus === 'Missing Project Code' && (
+                <>
                   <button
-                    onClick={() => handleAction('reject', `Transaction ${t.supplier} disputed`, { approvalStatus: 'Disputed' })}
-                    className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
+                    onClick={() => setActiveTab('Job Context')}
+                    className="flex items-center gap-2 text-sm bg-amber-600 text-white rounded-lg px-5 py-2.5 hover:bg-amber-700 font-medium"
                   >
-                    <AlertTriangle size={14} /> Dispute
+                    <Edit3 size={14} /> Edit — Add project code
                   </button>
                 </>
               )}
@@ -875,13 +1002,25 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
                     onClick={() => handleAction('export', `Transaction ${t.supplier} exported to accounting`, { exportedAt: new Date().toISOString() })}
                     className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
                   >
-                    <ArrowUpRight size={14} /> Export to accounting
+                    <ArrowUpRight size={14} /> Export
+                  </button>
+                  <button
+                    onClick={() => handleAction('flag', `Transaction ${t.supplier} flagged`)}
+                    className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
+                  >
+                    <Flag size={14} /> Flag
+                  </button>
+                  <button
+                    onClick={() => handleAction('reject', `Transaction ${t.supplier} disputed`, { approvalStatus: 'Disputed' })}
+                    className="flex items-center gap-2 text-sm text-red-600 border border-red-200 rounded-lg px-5 py-2.5 hover:bg-red-50 font-medium"
+                  >
+                    <AlertTriangle size={14} /> Dispute
                   </button>
                   <button
                     onClick={() => handleAction('approve', `Summary downloaded for ${t.supplier}`)}
                     className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-5 py-2.5 hover:bg-stone-50 font-medium"
                   >
-                    <FileText size={14} /> Download summary
+                    <FileText size={14} /> Download
                   </button>
                 </>
               )}
@@ -894,6 +1033,19 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
             </>
           )}
         </div>
+
+        {/* Request Changes Modal */}
+        {showRequestChanges && (
+          <RequestChangesModal
+            onClose={() => setShowRequestChanges(false)}
+            onSubmit={(changeType, reason) => {
+              handleAction('request-changes', `Changes requested for ${t.supplier}: ${changeType}`, {
+                changeRequestType: changeType,
+                changeRequestReason: reason,
+              });
+            }}
+          />
+        )}
       </div>
 
       <style>{`
