@@ -789,9 +789,13 @@ function ActivityContent({ t }) {
 const DRAWER_TABS = ['Overview', 'Job Context', 'Activity'];
 
 export default function TransactionDrawer({ transaction, onClose, onAction }) {
-  const [activeTab, setActiveTab] = useState('Overview');
   const t = transaction;
   if (!t) return null;
+
+  // Auto-open on the right tab based on status
+  const initialStatus = deriveCardTransactionStatus(t);
+  const initialTab = initialStatus === 'Missing Project Code' ? 'Job Context' : 'Overview';
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   // Editable state management
   const [edits, setEdits] = useState({
