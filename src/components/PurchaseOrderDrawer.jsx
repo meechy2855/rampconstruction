@@ -1143,7 +1143,7 @@ export default function PurchaseOrderDrawer({ po, onClose, onAction }) {
                       <Send size={14} /> Issue PO
                     </button>
                     <button
-                      onClick={() => handleAction('edit-po', `Editing ${po.name}`)}
+                      onClick={() => setIsEditing(true)}
                       className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-lg px-4 py-2.5 hover:bg-stone-50 font-medium"
                     >
                       <Edit3 size={14} /> Edit

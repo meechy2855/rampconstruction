@@ -414,7 +414,7 @@ function JobContextTab({ request }) {
 /* ═══════════════════════════════════════════════
    TAB 3: Approvals
    ═══════════════════════════════════════════════ */
-function ApprovalsTab({ request, approvers, setApprovers }) {
+function ApprovalsTab({ request, approvers, setApprovers, onApproversChange }) {
   const [showSelector, setShowSelector] = useState(false);
   const allApproved = approvers.length > 0 && approvers.every(a => a.status === 'Approved');
 
@@ -427,11 +427,19 @@ function ApprovalsTab({ request, approvers, setApprovers }) {
       status: 'Waiting',
       timestamp: null,
     }));
-    setApprovers(prev => [...prev, ...newApprovers]);
+    setApprovers(prev => {
+      const updated = [...prev, ...newApprovers];
+      onApproversChange?.(updated);
+      return updated;
+    });
   }
 
   function handleRemoveApprover(id) {
-    setApprovers(prev => prev.filter(a => a.id !== id));
+    setApprovers(prev => {
+      const updated = prev.filter(a => a.id !== id);
+      onApproversChange?.(updated);
+      return updated;
+    });
   }
 
   // Smart defaults
@@ -645,16 +653,16 @@ export default function RequestDrawer({ request, onClose, onAction }) {
     setIsEditing(false);
     // When saving from "Changes Requested", set to Draft
     if (request.status === 'Changes Requested') {
-      onAction?.('save-as-draft', `Saved changes to ${request.name}`, { edits: prepareEditsForSave() });
+      onAction?.('save-as-draft', `Saved changes to ${request.name}`, { edits: prepareEditsForSave(), approverChain: approvers });
     } else {
-      onAction?.('save', `Saved changes to ${request.name}`, { edits: prepareEditsForSave() });
+      onAction?.('save', `Saved changes to ${request.name}`, { edits: prepareEditsForSave(), approverChain: approvers });
     }
   };
 
   const handleSubmitForApproval = () => {
     setSavedEdits({ ...edits });
     setIsEditing(false);
-    onAction?.('submit', `Submitted ${request.name} for approval`, { edits: prepareEditsForSave() });
+    onAction?.('submit', `Submitted ${request.name} for approval`, { edits: prepareEditsForSave(), approverChain: approvers });
   };
 
   const handleDiscard = () => {
@@ -894,7 +902,7 @@ export default function RequestDrawer({ request, onClose, onAction }) {
             <>
               {activeTab === 'Overview' && <OverviewTab request={request} />}
               {activeTab === 'Job Context' && <JobContextTab request={request} />}
-              {activeTab === 'Approvals' && <ApprovalsTab request={request} approvers={approvers} setApprovers={setApprovers} />}
+              {activeTab === 'Approvals' && <ApprovalsTab request={request} approvers={approvers} setApprovers={setApprovers} onApproversChange={(updated) => onAction?.('update-approvers', `Updated approvers for ${request.name}`, { approverChain: updated })} />}
               {activeTab === 'Activity' && <ActivityTab request={request} />}
             </>
           )}
@@ -1021,7 +1029,7 @@ export default function RequestDrawer({ request, onClose, onAction }) {
               )}
               {request.status === 'Rejected' && (
                 <button
-                  onClick={() => handleAction('reopen', `Reopened ${request.name} as draft`)}
+                  onClick={() => handleAction('reopen', `Reopened ${request.name} for approval`)}
                   className="flex items-center gap-2 text-sm bg-stone-900 text-white rounded-lg px-5 py-2.5 hover:bg-stone-800 font-medium"
                 >
                   <Edit3 size={14} /> Reopen request

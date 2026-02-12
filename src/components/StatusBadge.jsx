@@ -14,6 +14,7 @@ const statusStyles = {
   'Missing info':      'bg-orange-50 text-orange-700 border border-orange-200',
   'Missing Receipt':   'bg-orange-50 text-orange-700 border border-orange-200',
   'Missing Project':   'bg-orange-50 text-orange-700 border border-orange-200',
+  'Missing Project Code': 'bg-orange-50 text-orange-700 border border-orange-200',
   'OK':                'bg-emerald-50 text-emerald-700 border border-emerald-200',
   'Needs Review':      'bg-amber-50 text-amber-700 border border-amber-200',
   'Waiting on Cardholder': 'bg-purple-50 text-purple-700 border border-purple-200',

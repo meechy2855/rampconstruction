@@ -1,72 +1,74 @@
 /**
- * Derive card transaction status based on business rules
+ * Shared Card Transaction Status Derivation
  *
  * Priority rules (most important first):
  * 1. If exportedAt != null => "Exported"
- * 2. Else if approvalStatus === "Approved" => "Approved"
- * 3. Else if missing receipt => "Missing receipt"
- * 4. Else if missing project/cost code => "Missing project coding"
- * 5. Else => "Needs review"
+ * 2. If approvalStatus === 'PENDING' => "For Approval"
+ * 3. If missing receipt => "Missing Receipt"
+ * 4. If missing project/cost code => "Missing Project Code"
+ * 5. If approvalStatus === 'APPROVED' or 'Approved' => "Approved"
+ * 6. Else => "For Approval" (default — needs review)
  */
 
 export function deriveCardTransactionStatus(transaction) {
-  if (!transaction) return 'Needs review';
+  if (!transaction) return 'For Approval';
 
   // 1. Exported takes highest priority
   if (transaction.exportedAt) {
     return 'Exported';
   }
 
-  // 2. Approved status
-  if (transaction.approvalStatus === 'Approved') {
+  // 2. Explicit pending / for-approval
+  if (transaction.approvalStatus === 'PENDING') {
+    return 'For Approval';
+  }
+
+  // 3. Missing receipt
+  const hasReceipt = transaction.receiptStatus === 'Attached';
+  if (!hasReceipt) {
+    return 'Missing Receipt';
+  }
+
+  // 4. Missing project / cost code
+  const hasProject = transaction.projectId || transaction.projectCode;
+  const hasCostCode = transaction.costCode;
+  if (!hasProject || !hasCostCode) {
+    return 'Missing Project Code';
+  }
+
+  // 5. Approved
+  if (transaction.approvalStatus === 'APPROVED' || transaction.approvalStatus === 'Approved') {
     return 'Approved';
   }
 
-  // 3. Missing receipt check
-  const receiptRequired = true; // In real app, might depend on amount threshold
-  const hasReceipt = transaction.receiptStatus === 'Attached';
-  if (receiptRequired && !hasReceipt) {
-    return 'Missing receipt';
-  }
-
-  // 4. Missing project coding check
-  const codingRequired = true; // In real app, might depend on policies
-  const hasProject = transaction.projectId || transaction.projectCode;
-  const hasCostCode = transaction.costCode;
-  if (codingRequired && (!hasProject || !hasCostCode)) {
-    return 'Missing project coding';
-  }
-
-  // 5. Default: all required fields complete, ready for review
-  return 'Needs review';
+  // 6. Default: all required fields present but not yet approved
+  return 'For Approval';
 }
 
 /**
- * Determine what's missing from a transaction
- * Used to guide the user in the detail drawer
+ * Determine what's missing from a transaction.
+ * Used to guide the user in the detail drawer.
  */
 export function getTransactionBlockers(transaction) {
   const blockers = [];
 
-  const receiptRequired = true;
   const hasReceipt = transaction.receiptStatus === 'Attached';
-  if (receiptRequired && !hasReceipt) {
+  if (!hasReceipt) {
     blockers.push({
       type: 'receipt',
       message: 'Receipt is required',
-      section: 'Receipts',
+      section: 'Overview',
       action: 'Upload receipt',
     });
   }
 
-  const codingRequired = true;
   const hasProject = transaction.projectId || transaction.projectCode;
   const hasCostCode = transaction.costCode;
-  if (codingRequired && (!hasProject || !hasCostCode)) {
+  if (!hasProject || !hasCostCode) {
     blockers.push({
       type: 'coding',
       message: 'Project and cost code are required',
-      section: 'Project Coding',
+      section: 'Job Context',
       action: 'Add project coding',
     });
   }
@@ -78,6 +80,5 @@ export function getTransactionBlockers(transaction) {
  * Check if a transaction is ready for review (all blockers resolved)
  */
 export function isReadyForReview(transaction) {
-  const status = deriveCardTransactionStatus(transaction);
-  return status === 'Needs review' || status === 'Approved' || status === 'Exported';
+  return getTransactionBlockers(transaction).length === 0;
 }
