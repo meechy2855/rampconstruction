@@ -234,12 +234,16 @@ export default function ConstructionCard({ selectedProject }) {
         }));
       } else if (actionType === 'save') {
         // Save edits to master table (receipt, project code, cost code, etc.)
+        // Don't close drawer — let TransactionDrawer handle post-save flow
+        // (shows "Submit for approval" CTA if blockers resolved)
         if (extraData) {
           setStatusOverrides(prev => ({
             ...prev,
             [id]: { ...(prev[id] || {}), ...extraData },
           }));
         }
+        setToast({ id: Date.now(), message, type: actionType, visible: true });
+        return; // keep drawer open
       } else if (actionType === 'submit-for-approval') {
         // Submit for approval: set PENDING status
         setStatusOverrides(prev => ({
@@ -459,7 +463,7 @@ export default function ConstructionCard({ selectedProject }) {
       {/* Transaction Detail Drawer */}
       {selectedTransaction && (
         <TransactionDrawer
-          transaction={selectedTransaction}
+          transaction={transactions.find(t => t.id === selectedTransaction.id) || selectedTransaction}
           onClose={() => setSelectedTransaction(null)}
           onAction={handleDrawerAction}
         />
