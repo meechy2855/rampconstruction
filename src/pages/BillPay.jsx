@@ -73,7 +73,7 @@ function OverviewWidgets({ filteredBills, onKpiClick, activeKpi }) {
   ];
 
   return (
-    <div className="grid grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-4 gap-3 mb-3">
       {widgets.map((w) => {
         const Icon = w.icon;
         const isActive = activeKpi === w.key;
@@ -81,20 +81,20 @@ function OverviewWidgets({ filteredBills, onKpiClick, activeKpi }) {
           <div
             key={w.key}
             onClick={() => onKpiClick(isActive ? null : w.key)}
-            className={`border rounded-xl p-4 cursor-pointer transition-all ${
+            className={`border rounded-xl px-4 py-3 cursor-pointer transition-all ${
               isActive
                 ? 'border-ramp-gray-900 ring-1 ring-ramp-gray-900 bg-ramp-gray-50'
                 : 'border-ramp-gray-200 hover:border-ramp-gray-300 hover:shadow-sm'
             }`}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`p-1.5 rounded-lg ${w.color}`}>
-                <Icon size={16} />
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className={`p-1 rounded-md ${w.color}`}>
+                <Icon size={14} />
               </div>
-              <span className="text-xs font-medium text-ramp-gray-500 uppercase tracking-wide">{w.title}</span>
+              <span className="text-[11px] font-medium text-ramp-gray-500 uppercase tracking-wide leading-tight">{w.title}</span>
             </div>
-            <div className="text-2xl font-semibold text-ramp-gray-900">{w.value}</div>
-            <div className="text-xs text-ramp-gray-500 mt-0.5">{w.subtitle}</div>
+            <div className="text-xl font-semibold text-ramp-gray-900">{w.value}</div>
+            <div className="text-[11px] text-ramp-gray-500 mt-0.5">{w.subtitle}</div>
           </div>
         );
       })}
@@ -132,6 +132,20 @@ function LienWaiverPanel({ onRequestWaiver }) {
   );
 }
 
+/* ─── Helper: extract persistable field overrides from drawer edits ─── */
+function buildEditOverrides(data, bill) {
+  const o = {};
+  if (data.amount) o.amount = parseFloat(data.amount) || bill.amount;
+  if (data.project) o.project = data.project;
+  if (data.costCode) o.costCode = data.costCode.split(' · ')[0] || data.costCode;
+  if (data.owner) o.owner = data.owner.replace(/\s*\(.*\)$/, '');
+  if (data.paymentMethod) o.paymentMethod = data.paymentMethod;
+  if (data.invoiceDate) o.invoiceDate = data.invoiceDate;
+  if (data.dueDate) o.dueDate = data.dueDate;
+  if (data.retainageWithheld) o.retainageWithheld = parseFloat(data.retainageWithheld) || bill.retainageWithheld;
+  return o;
+}
+
 /* ═══════ Main Component ═══════ */
 export default function BillPay({ selectedProject }) {
   const [activeTab, setActiveTab] = useState('Overview');
@@ -155,18 +169,51 @@ export default function BillPay({ selectedProject }) {
   }, []);
 
   // Drawer action handler → shows toast + updates status + closes drawer
-  const handleDrawerAction = useCallback((actionType, message) => {
+  const handleDrawerAction = useCallback((actionType, message, extraData) => {
     setToast({ id: Date.now(), message, type: actionType, visible: true });
     if (selectedBill) {
       const id = selectedBill.id;
       if (actionType === 'approve') {
-        setStatusOverrides(prev => ({ ...prev, [id]: { status: 'Approved' } }));
+        setStatusOverrides(prev => ({ ...prev, [id]: { ...(prev[id] || {}), status: 'Approved' } }));
       } else if (actionType === 'reject') {
-        setStatusOverrides(prev => ({ ...prev, [id]: { status: 'Rejected' } }));
+        setStatusOverrides(prev => ({ ...prev, [id]: { ...(prev[id] || {}), status: 'Rejected' } }));
       } else if (actionType === 'pay') {
-        setStatusOverrides(prev => ({ ...prev, [id]: { status: 'Paid' } }));
+        setStatusOverrides(prev => ({ ...prev, [id]: { ...(prev[id] || {}), status: 'Paid' } }));
       } else if (actionType === 'flag') {
-        setStatusOverrides(prev => ({ ...prev, [id]: { status: 'Flagged' } }));
+        return; // toast-only, don't close drawer
+      } else if (actionType === 'lien-waiver-uploaded') {
+        setStatusOverrides(prev => ({ ...prev, [id]: { ...(prev[id] || {}), lienWaiverAttached: true } }));
+        // falls through to close drawer
+      } else if (actionType === 'lien-waiver-requested' || actionType === 'download-receipt') {
+        return; // toast-only, don't close drawer
+      } else if (actionType === 'request-changes') {
+        const comments = extraData?.comments || message;
+        setStatusOverrides(prev => ({
+          ...prev,
+          [id]: { ...(prev[id] || {}), status: 'Changes Requested', changeRequestComments: comments },
+        }));
+      } else if (actionType === 'save-changes') {
+        const eo = extraData ? buildEditOverrides(extraData, selectedBill) : {};
+        setStatusOverrides(prev => ({
+          ...prev,
+          [id]: { ...(prev[id] || {}), ...eo, status: 'For Approval', changeRequestComments: null },
+        }));
+      } else if (actionType === 'save-draft') {
+        const eo = extraData ? buildEditOverrides(extraData, selectedBill) : {};
+        setStatusOverrides(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...eo } }));
+        return; // don't close drawer — user is still editing
+      } else if (actionType === 'submit-for-approval') {
+        const eo = extraData ? buildEditOverrides(extraData, selectedBill) : {};
+        setStatusOverrides(prev => ({
+          ...prev,
+          [id]: { ...(prev[id] || {}), ...eo, status: 'For Approval' },
+        }));
+      } else if (actionType === 'submit-payment') {
+        setStatusOverrides(prev => ({ ...prev, [id]: { ...(prev[id] || {}), status: 'Paid' } }));
+      } else if (actionType === 'schedule-payment') {
+        setStatusOverrides(prev => ({ ...prev, [id]: { ...(prev[id] || {}), status: 'Scheduled' } }));
+      } else if (actionType === 'reopen') {
+        setStatusOverrides(prev => ({ ...prev, [id]: { ...(prev[id] || {}), status: 'For Approval' } }));
       }
     }
     setSelectedBill(null);
@@ -215,7 +262,7 @@ export default function BillPay({ selectedProject }) {
       );
     }
     if (activeTab === 'Drafts') result = result.filter(b => b.status === 'Draft');
-    if (activeTab === 'For Approval') result = result.filter(b => b.status === 'Pending' || b.status === 'For Approval');
+    if (activeTab === 'For Approval') result = result.filter(b => b.status === 'Pending' || b.status === 'For Approval' || b.status === 'Changes Requested');
     if (activeTab === 'For Payment') result = result.filter(b => b.status === 'Scheduled');
     if (activeTab === 'History') result = result.filter(b => b.status === 'Paid');
     if (activeTab === 'Compliance') result = result.filter(b => b.lienWaiverRequired);
@@ -256,7 +303,7 @@ export default function BillPay({ selectedProject }) {
 
   const tabCounts = {
     'Drafts': billsWithOverrides.filter(b => b.status === 'Draft').length,
-    'For Approval': billsWithOverrides.filter(b => b.status === 'Pending' || b.status === 'For Approval').length,
+    'For Approval': billsWithOverrides.filter(b => b.status === 'Pending' || b.status === 'For Approval' || b.status === 'Changes Requested').length,
     'For Payment': billsWithOverrides.filter(b => b.status === 'Scheduled').length,
   };
 
@@ -294,18 +341,11 @@ export default function BillPay({ selectedProject }) {
 
       <div className="mt-4">
         {activeTab === 'Overview' && (
-          <div className="flex gap-6">
-            <div className="flex-1">
-              <OverviewWidgets
-                filteredBills={allBillsForWidgets}
-                onKpiClick={handleKpiClick}
-                activeKpi={activeKpi}
-              />
-            </div>
-            <div className="w-80 shrink-0">
-              <LienWaiverPanel onRequestWaiver={handleRequestWaiver} />
-            </div>
-          </div>
+          <OverviewWidgets
+            filteredBills={allBillsForWidgets}
+            onKpiClick={handleKpiClick}
+            activeKpi={activeKpi}
+          />
         )}
 
         {/* Active KPI filter indicator */}
