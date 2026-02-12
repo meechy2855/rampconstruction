@@ -208,7 +208,7 @@ export default function ConstructionCard({ selectedProject }) {
       } else if (actionType === 'reject') {
         setStatusOverrides(prev => ({
           ...prev,
-          [id]: { ...(prev[id] || {}), approvalStatus: 'Disputed', ...extraData },
+          [id]: { ...(prev[id] || {}), approvalStatus: 'Rejected', ...extraData },
         }));
       } else if (actionType === 'request-changes') {
         // Set status based on changeRequestType

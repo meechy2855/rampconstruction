@@ -10,11 +10,11 @@ import Toast from '../components/Toast';
 import { procurementRequests, costCodes } from '../data/mockData';
 import { isPurchaseRequest, isPurchaseOrder, derivePOStatus } from '../utils/procurementTypeGuards';
 
-const REQUEST_TABS = ['All requests', 'Drafts', 'Pending', 'Needs action'];
+const REQUEST_TABS = ['All requests', 'Drafts', 'Pending', 'Needs action', 'Approved'];
 const PO_TABS = ['All POs', 'Active', 'Closed'];
 
 /* ─── PR statuses: items that belong in the Requests section ─── */
-const PR_STATUSES = ['Draft', 'For approval', 'Changes Requested', 'Rejected'];
+const PR_STATUSES = ['Draft', 'For approval', 'Changes Requested', 'Rejected', 'Approved'];
 
 /* ─── PO statuses: items that belong in the Purchase Orders section ─── */
 const PO_STATUSES = ['Approved', 'Converted', 'Card Issued', 'Cancelled'];
@@ -48,6 +48,7 @@ function RequestsView({ selectedProject, onRowClick, requests }) {
     if (activeTab === 'Drafts') result = result.filter(r => r.status === 'Draft');
     if (activeTab === 'Pending') result = result.filter(r => r.status === 'For approval');
     if (activeTab === 'Needs action') result = result.filter(r => r.status === 'Changes Requested');
+    if (activeTab === 'Approved') result = result.filter(r => r.status === 'Approved');
     return result;
   }, [prItems, selectedProject, search, activeTab]);
 
@@ -57,6 +58,7 @@ function RequestsView({ selectedProject, onRowClick, requests }) {
     'Drafts': prItems.filter(r => r.status === 'Draft').length,
     'Pending': prItems.filter(r => r.status === 'For approval').length,
     'Needs action': prItems.filter(r => r.status === 'Changes Requested').length,
+    'Approved': prItems.filter(r => r.status === 'Approved').length,
   }), [prItems]);
 
   return (

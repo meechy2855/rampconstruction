@@ -3,11 +3,12 @@
  *
  * Priority rules (most important first):
  * 1. If exportedAt != null => "Exported"
- * 2. If approvalStatus === 'PENDING' => "For Approval"
- * 3. If missing receipt => "Missing Receipt"
- * 4. If missing project/cost code => "Missing Project Code"
- * 5. If approvalStatus === 'APPROVED' or 'Approved' => "Approved"
- * 6. Else => "For Approval" (default — needs review)
+ * 2. If approvalStatus === 'Rejected' => "Rejected"
+ * 3. If approvalStatus === 'PENDING' => "For Approval"
+ * 4. If missing receipt => "Missing Receipt"
+ * 5. If missing project/cost code => "Missing Project Code"
+ * 6. If approvalStatus === 'APPROVED' or 'Approved' => "Approved"
+ * 7. Else => "For Approval" (default — needs review)
  */
 
 export function deriveCardTransactionStatus(transaction) {
@@ -18,30 +19,35 @@ export function deriveCardTransactionStatus(transaction) {
     return 'Exported';
   }
 
-  // 2. Explicit pending / for-approval
+  // 2. Rejected
+  if (transaction.approvalStatus === 'Rejected') {
+    return 'Rejected';
+  }
+
+  // 3. Explicit pending / for-approval
   if (transaction.approvalStatus === 'PENDING') {
     return 'For Approval';
   }
 
-  // 3. Missing receipt
+  // 4. Missing receipt
   const hasReceipt = transaction.receiptStatus === 'Attached';
   if (!hasReceipt) {
     return 'Missing Receipt';
   }
 
-  // 4. Missing project / cost code
+  // 5. Missing project / cost code
   const hasProject = transaction.projectId || transaction.projectCode;
   const hasCostCode = transaction.costCode;
   if (!hasProject || !hasCostCode) {
     return 'Missing Project Code';
   }
 
-  // 5. Approved
+  // 6. Approved
   if (transaction.approvalStatus === 'APPROVED' || transaction.approvalStatus === 'Approved') {
     return 'Approved';
   }
 
-  // 6. Default: all required fields present but not yet approved
+  // 7. Default: all required fields present but not yet approved
   return 'For Approval';
 }
 

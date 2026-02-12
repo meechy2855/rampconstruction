@@ -1024,6 +1024,12 @@ export default function TransactionDrawer({ transaction, onClose, onAction }) {
                   </button>
                 </>
               )}
+              {derivedStatus === 'Rejected' && (
+                <div className="text-sm text-red-600 flex items-center gap-2">
+                  <Ban size={14} />
+                  Transaction rejected
+                </div>
+              )}
               {derivedStatus === 'Exported' && (
                 <div className="text-sm text-stone-500 flex items-center gap-2">
                   <Check size={14} className="text-emerald-600" />
